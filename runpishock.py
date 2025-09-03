@@ -420,9 +420,9 @@ def render_curve():
     sorted_pts = sorted(UI_CONTROL_POINTS, key=lambda p: p[0])
     curve = bezier_interpolate(sorted_pts)
 
-    ax.plot(curve[:, 0], curve[:, 1], color='cyan')
+    ax.plot(curve[:, 0], curve[:, 1], color='cyan', linewidth=2.5)
     xs, ys = zip(*sorted_pts)
-    ax.scatter(xs, ys, color='red', zorder=5)
+    ax.scatter(xs, ys, color='red', s=100, zorder=5)
 
     min_x, min_y = sorted_pts[0]
     max_x, max_y = sorted_pts[-1]
