@@ -62,12 +62,13 @@ right_click_input_widget = None
 
 # Style settings
 TOUCH_SELECT_THRESHOLD = 8
-TOUCH_MARKER_SIZE = 200
+TOUCH_MARKER_SIZE = 140
 LINE_WIDTH = 3
-DARK_BG_FIG = "#2A313D"
-DARK_BG_AX = "#2C3749"
-LINE_COLOR = "#00c2ff"
-MARKER_COLOR = "#ff6b6b"
+OUTSIDE_CURVE_BG = "#2A313D"
+INSIDE_CURVE_BG = "#2C3749"
+BACKGROUND_COLOR = "#202630"
+CURVE_LINE_COLOR = "#00c2ff"
+MARKER_COLOR = "#D88A91"
 LABEL_COLOR = "#e6eef6"
 
 drag_context = {}
@@ -431,11 +432,11 @@ def render_curve():
     curve = bezier_interpolate(sorted_pts)
 
     # Background style
-    fig.patch.set_facecolor(DARK_BG_FIG)
-    ax.set_facecolor(DARK_BG_AX)    
+    fig.patch.set_facecolor(OUTSIDE_CURVE_BG)
+    ax.set_facecolor(INSIDE_CURVE_BG)    
 
     # Draw curve
-    ax.plot(curve[:, 0], curve[:, 1], color=LINE_COLOR, linewidth=LINE_WIDTH)
+    ax.plot(curve[:, 0], curve[:, 1], color=CURVE_LINE_COLOR, linewidth=LINE_WIDTH)
 
     # Marker points
     xs, ys = zip(*sorted_pts)
@@ -470,7 +471,7 @@ def render_curve():
 
     legend = ax.legend(loc='upper right', bbox_to_anchor=(1.02, 1.0), framealpha=0.9, fontsize=10)
     if legend:
-        legend.get_frame().set_facecolor(DARK_BG_FIG)
+        legend.get_frame().set_facecolor(OUTSIDE_CURVE_BG)
         legend.get_frame().set_edgecolor('#222')
         for text in legend.get_texts():
             text.set_color(LABEL_COLOR)
@@ -503,8 +504,6 @@ def toggle_cooldown_enabled():
 root = tk.Tk()
 root.title("Shock Control GUI")
 
-TRANSPARENT_COLOR = "#202630"
-
 style = ttk.Style(root)
 try:
     style.theme_use('clam')
@@ -512,11 +511,11 @@ except Exception:
     pass
 style.configure('.', font=('Segoe UI', 11), padding=6)
 style.configure('TButton', padding=(10, 6), relief='flat')
-style.configure('TLabel', font=('Segoe UI', 11), background=TRANSPARENT_COLOR, foreground='white')
-style.configure('TCheckbutton', font=('Segoe UI', 11), background=TRANSPARENT_COLOR, foreground='white')
-style.configure('TFrame', background='#202630')
-style.configure('TScale', troughcolor='#222', background='#202630')
-root.configure(bg="#202630")
+style.configure('TLabel', font=('Segoe UI', 11), background=BACKGROUND_COLOR, foreground='white')
+style.configure('TCheckbutton', font=('Segoe UI', 11), background=BACKGROUND_COLOR, foreground='white')
+style.configure('TFrame', background=BACKGROUND_COLOR)
+style.configure('TScale', troughcolor='#222', background=BACKGROUND_COLOR)
+root.configure(bg=BACKGROUND_COLOR)
 
 
 save_enabled_var = tk.BooleanVar(value=True)
@@ -571,7 +570,7 @@ ui_max_scale.pack(fill=tk.X)
 ui_max_scale.bind("<ButtonPress-1>", lambda e: load_undo_snapshot())
 ui_max_scale.bind("<ButtonRelease-1>", lambda e: persist_config())
 
-label_save_toggle = tk.Label(root, text="Enable Saving", bg=TRANSPARENT_COLOR, fg='white')
+label_save_toggle = tk.Label(root, text="Enable Saving", bg=BACKGROUND_COLOR, fg='white')
 label_save_toggle.place(relx=0.01, rely=0.93, anchor='sw')
 
 save_toggle = ttk.Checkbutton(root, text="", variable=save_enabled_var, command=lambda: toggle_saving())
@@ -581,8 +580,8 @@ save_toggle.place(relx=0.01, rely=0.98, anchor='sw')
 mouse_pos_x = tk.StringVar(value="Intensity: -")
 mouse_pos_y = tk.StringVar(value="Weight:    -")
 
-mouse_pos_x_label = tk.Label(root, textvariable=mouse_pos_x, font=("Courier New", 8), bg=TRANSPARENT_COLOR, fg='white')
-mouse_pos_y_label = tk.Label(root, textvariable=mouse_pos_y, font=("Courier New", 8), bg=TRANSPARENT_COLOR, fg='white')
+mouse_pos_x_label = tk.Label(root, textvariable=mouse_pos_x, font=("Courier New", 8), bg=BACKGROUND_COLOR, fg='white')
+mouse_pos_y_label = tk.Label(root, textvariable=mouse_pos_y, font=("Courier New", 8), bg=BACKGROUND_COLOR, fg='white')
 
 mouse_pos_x_label.place(relx=0.01, rely=0.84, anchor='sw')
 mouse_pos_y_label.place(relx=0.01, rely=0.87, anchor='sw')
