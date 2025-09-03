@@ -60,6 +60,16 @@ CONFIG_FILE_PATH = "curve_config.json"
 dragging_index = None
 right_click_input_widget = None
 
+# Style settings
+TOUCH_SELECT_THRESHOLD = 8
+TOUCH_MARKER_SIZE = 200
+LINE_WIDTH = 3
+DARK_BG_FIG = "#2A313D"
+DARK_BG_AX = "#2C3749"
+LINE_COLOR = "#00c2ff"
+MARKER_COLOR = "#ff6b6b"
+LABEL_COLOR = "#e6eef6"
+
 drag_context = {}
 
 if os.path.exists(CONFIG_FILE_PATH):
@@ -420,25 +430,55 @@ def render_curve():
     sorted_pts = sorted(UI_CONTROL_POINTS, key=lambda p: p[0])
     curve = bezier_interpolate(sorted_pts)
 
-    ax.plot(curve[:, 0], curve[:, 1], color='cyan', linewidth=2.5)
-    xs, ys = zip(*sorted_pts)
-    ax.scatter(xs, ys, color='red', s=100, zorder=5)
+    # Background style
+    fig.patch.set_facecolor(DARK_BG_FIG)
+    ax.set_facecolor(DARK_BG_AX)    
 
+    # Draw curve
+    ax.plot(curve[:, 0], curve[:, 1], color=LINE_COLOR, linewidth=LINE_WIDTH)
+
+    # Marker points
+    xs, ys = zip(*sorted_pts)
+    ax.scatter(xs, ys, zorder=5, color=MARKER_COLOR, s=TOUCH_MARKER_SIZE, edgecolor='k', linewidth=0.6)
+
+    # Draw ring around selected point
+    try:
+        if dragging_index is not None and 0 <= dragging_index < len(sorted_pts):
+            sx, sy = sorted_pts[dragging_index]
+            ax.scatter([sx], [sy], s=TOUCH_MARKER_SIZE * 1.8, facecolors='none',
+                       edgecolors='white', linewidths=1.4, alpha=0.45, zorder=4)
+    except Exception:
+        pass
+
+    # Draw min/max lines
     min_x, min_y = sorted_pts[0]
     max_x, max_y = sorted_pts[-1]
+    ax.axvline(min_x, color='#5eead4', linestyle='--', label=f"Min {int(min_x)}% with {min_y *10:.1f} weight", linewidth=1)
+    ax.axvline(max_x, color='#fbbf24', linestyle='--', label=f"Max {int(max_x)}% with {max_y * 10:.1f} weight", linewidth=1)
 
-    ax.axvline(min_x, color='green', linestyle='--', label=f"Min {int(min_x)}% with {min_y *10:.1f} weight")
-    ax.axvline(max_x, color='orange', linestyle='--', label=f"Max {int(max_x)}% with {max_y * 10:.1f} weight")
+    # Labels
+    ax.set_title("Intensity Probability Curve", fontsize=14, color=LABEL_COLOR, pad=8)
+    ax.set_xlabel("Intensity (%)", fontsize=12, color=LABEL_COLOR)
+    ax.set_ylabel("Weight", fontsize=12, color=LABEL_COLOR)
 
-    ax.set_title("Intensity Probability Curve")
-    ax.set_xlabel("Intensity (%)")
-    ax.set_ylabel("Weight")
-    ax.legend()
+    # Axis styling
+    ax.set_yticks(np.linspace(0, 1, 11))
+    ax.set_yticklabels([f"{v:.1f}" for v in np.linspace(0, 1, 11)], color=LABEL_COLOR)
+
+    ax.tick_params(axis='x', colors=LABEL_COLOR)
+    ax.tick_params(axis='y', colors=LABEL_COLOR)
+
+    legend = ax.legend(loc='upper right', bbox_to_anchor=(1.02, 1.0), framealpha=0.9, fontsize=10)
+    if legend:
+        legend.get_frame().set_facecolor(DARK_BG_FIG)
+        legend.get_frame().set_edgecolor('#222')
+        for text in legend.get_texts():
+            text.set_color(LABEL_COLOR)
+
     ax.set_xlim(UI_VIEW_MIN_PERCENT, UI_VIEW_MAX_PERCENT)
     ax.set_ylim(0, 1)
-    ax.set_yticks(np.linspace(0, 1, 11))
-    ax.set_yticklabels([str(i) for i in range(11)])
-    ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda val, _: str(int(val*10))))
+
+    fig.tight_layout(pad=1.2)
     canvas.draw_idle()
 
 
@@ -460,9 +500,24 @@ def toggle_cooldown_enabled():
     COOLDOWN_ENABLED = not COOLDOWN_ENABLED
     print(f"Cooldown {'enabled' if COOLDOWN_ENABLED else 'disabled'}")
 
-
 root = tk.Tk()
 root.title("Shock Control GUI")
+
+TRANSPARENT_COLOR = "#202630"
+
+style = ttk.Style(root)
+try:
+    style.theme_use('clam')
+except Exception:
+    pass
+style.configure('.', font=('Segoe UI', 11), padding=6)
+style.configure('TButton', padding=(10, 6), relief='flat')
+style.configure('TLabel', font=('Segoe UI', 11), background=TRANSPARENT_COLOR, foreground='white')
+style.configure('TCheckbutton', font=('Segoe UI', 11), background=TRANSPARENT_COLOR, foreground='white')
+style.configure('TFrame', background='#202630')
+style.configure('TScale', troughcolor='#222', background='#202630')
+root.configure(bg="#202630")
+
 
 save_enabled_var = tk.BooleanVar(value=True)
 
@@ -516,7 +571,7 @@ ui_max_scale.pack(fill=tk.X)
 ui_max_scale.bind("<ButtonPress-1>", lambda e: load_undo_snapshot())
 ui_max_scale.bind("<ButtonRelease-1>", lambda e: persist_config())
 
-label_save_toggle = ttk.Label(root, text="Enable Saving")
+label_save_toggle = tk.Label(root, text="Enable Saving", bg=TRANSPARENT_COLOR, fg='white')
 label_save_toggle.place(relx=0.01, rely=0.93, anchor='sw')
 
 save_toggle = ttk.Checkbutton(root, text="", variable=save_enabled_var, command=lambda: toggle_saving())
@@ -526,8 +581,8 @@ save_toggle.place(relx=0.01, rely=0.98, anchor='sw')
 mouse_pos_x = tk.StringVar(value="Intensity: -")
 mouse_pos_y = tk.StringVar(value="Weight:    -")
 
-mouse_pos_x_label = ttk.Label(root, textvariable=mouse_pos_x, font=("Courier New", 8))
-mouse_pos_y_label = ttk.Label(root, textvariable=mouse_pos_y, font=("Courier New", 8))
+mouse_pos_x_label = tk.Label(root, textvariable=mouse_pos_x, font=("Courier New", 8), bg=TRANSPARENT_COLOR, fg='white')
+mouse_pos_y_label = tk.Label(root, textvariable=mouse_pos_y, font=("Courier New", 8), bg=TRANSPARENT_COLOR, fg='white')
 
 mouse_pos_x_label.place(relx=0.01, rely=0.84, anchor='sw')
 mouse_pos_y_label.place(relx=0.01, rely=0.87, anchor='sw')
@@ -535,6 +590,13 @@ mouse_pos_y_label.place(relx=0.01, rely=0.87, anchor='sw')
 cooldown_var = tk.BooleanVar(value=True)
 cooldown_check = ttk.Checkbutton(frame_controls, text="Enable Cooldown", variable=cooldown_var, command=toggle_cooldown_enabled)
 cooldown_check.pack(pady=5)
+
+# Extra padding for children in the control frame
+for child in frame_controls.winfo_children():
+    try:
+        child.pack_configure(padx=8, pady=6)
+    except Exception:
+        pass
 
 # Bind Undo/\Redo
 root.bind_all('<Control-z>', undo_action)
