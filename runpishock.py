@@ -65,9 +65,8 @@ trigger_timestamps = []
 last_trigger_time = 0
 
 # Pishock Vars
-pishock_api = SerialAPI(port=None) if USE_PISHOCK else None
+pishock_api = SerialAPI(port=SERIAL_PORT if SERIAL_PORT is not "" else None) if USE_PISHOCK else None
 shocker = None
-
 
 # ~~~      OSC / SERIAL SETUP      ~~~
 osc_sender = None
