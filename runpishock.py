@@ -15,11 +15,11 @@ import os
 
 # --- NETWORK / Serial Config
 USE_PISHOCK = False # Set to True if using PiShock, False for OpenShock
-OPENSHOCK_SHOCKER_ID = 41838 # If this ID doesn't work, insert your shocker device ID
+OPENSHOCK_SHOCKER_ID = 41838 # Default openshock ID, change if needed
 VRCHAT_HOST = "127.0.0.1"
 OSC_LISTEN_PORT = 9001
 OSC_SEND_PORT = 9000
-SERIAL_BAUDRATE = 115200
+OPENSHOCK_SERIAL_BAUDRATE = 115200
 SERIAL_PORT = "" # Leave blank to auto-detect
 SHOCK_PARAM = "/avatar/parameters/Shock"
 
@@ -102,7 +102,7 @@ def connect_serial():
             for attempt in range(3):
                 for port in ports:
                     try:
-                        serial_connection = serial.Serial(port, SERIAL_BAUDRATE, timeout=1)
+                        serial_connection = serial.Serial(port, OPENSHOCK_SERIAL_BAUDRATE, timeout=1)
                         print(f"Connected to serial port {port}")
                         return serial_connection
                     except Exception as e:
