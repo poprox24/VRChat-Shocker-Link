@@ -369,6 +369,7 @@ def handle_osc_packet(address, *args):
             intensities, weights = compute_curve_distribution()
 
             if address == SHOCK_PARAM:
+                # For main shock param, use full curve
                 intensity = int(random.choices(intensities, weights=weights, k=1)[0])
                 duration = round(random.uniform(MIN_SHOCK_DURATION, MAX_SHOCK_DURATION), 1)
             else:
