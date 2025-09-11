@@ -69,8 +69,6 @@ Make sure to download this program before you continue:
 5. Change the **SHOCK_PARAMETER** to the parameter you created on your VRChat avatar and set **USE_PISHOCK** to true, if using a PiShock device
 6. Run **RunShockerLink.bat**
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
 <!-- ROADMAP -->
 ## Roadmap
 
@@ -78,8 +76,6 @@ Make sure to download this program before you continue:
 - [ ] Rework UI
 
 See the [open issues](https://github.com/poprox24/VRChat-Shocker-Link/issues) for a full list of proposed features (and known issues).
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 
 
@@ -109,8 +105,6 @@ Don't forget to give the project a star! Thanks again!
 ## License
 
 Distributed under the MIT License. See `LICENSE.txt` for more information.
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 
 
