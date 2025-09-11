@@ -21,10 +21,10 @@
     <br />
     It has chat message support, curve for intensity and a few more settings you can easily change in the UI
     <br />
-    <br />
-    <video controls>
-      <source src="Media/demo.mp4" type="video/mp4">
     <a href="https://github.com/poprox24/VRChat-Shocker-Link/issues/new?labels=bug">Report Bug or Request Feature</a>
+
+
+https://github.com/user-attachments/assets/beff6062-4739-47cd-b56c-7f491de81a68
   </p>
 </div>
 
