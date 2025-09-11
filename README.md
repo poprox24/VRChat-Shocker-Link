@@ -63,6 +63,7 @@ Make sure to download this program before you continue:
 
 1. Scroll up to the top of the page
 2. Click on **Code** and then **Download ZIP**
+    - Alternatively you can clone this repository using git
 3. Extract the ZIP anywhere on your computer
 4. Open **config.yml**
 5. Change the **SHOCK_PARAMETER** to the parameter you created on your VRChat avatar and set **USE_PISHOCK** to true, if using a PiShock device
