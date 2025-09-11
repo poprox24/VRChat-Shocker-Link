@@ -46,6 +46,7 @@ CURVE_LINE_COLOR = "#00c2ff"
 MARKER_COLOR = "#D88A91"
 LABEL_COLOR = "#e6eef6"
 
+# ~~~      VARIABLES      ~~~
 # Drag/Edit state
 dragging_index = None
 right_click_input_widget = None
@@ -59,8 +60,8 @@ redo_history = []
 trigger_timestamps = []
 last_trigger_time = 0
 
-# OSC client for sending chat messages
 
+# ~~~      OSC / SERIAL SETUP      ~~~
 osc_sender = None
 def setup_osc_sender():
     global osc_sender
@@ -75,7 +76,6 @@ def setup_osc_sender():
                     time.sleep(3)
         except Exception as e:
             print(f"Failed to set up OSC sender: {e}. Maximum retries reached.")
-
 
 serial_connection = None
 def connect_serial():
@@ -101,6 +101,7 @@ connect_serial()
 # Try to set up OSC sender
 setup_osc_sender()
 
+# ~~~      LOAD / SAVE CONFIG      ~~~
 # Attempt to load config, default if not found or error
 if os.path.exists(CONFIG_FILE_PATH):
     try:
@@ -117,7 +118,7 @@ if os.path.exists(CONFIG_FILE_PATH):
         print("Config load failed:", e)
 
 # Save new config to file
-def persist_config():
+def save_config():
     # Do not save if disabled
     if not save_enabled_var.get():
         return
@@ -138,7 +139,7 @@ def persist_config():
     except Exception as e:
         print("Failed to save config:", e)
 
-
+# ~~~      UNDO / REDO LOGIC      ~~~
 # Save current state to undo history
 def load_undo_snapshot():
     # Prepare data
@@ -204,7 +205,7 @@ def undo_action(event=None):
     snapshot = undo_history.pop()
     apply_snapshot(snapshot)
     render_curve()
-    persist_config()
+    save_config()
 
 # Redo action
 def redo_action(event=None):
@@ -224,9 +225,10 @@ def redo_action(event=None):
     snap = redo_history.pop()
     apply_snapshot(snap)
     render_curve()
-    persist_config()
+    save_config()
 
 
+# ~~~      MESSAGE SENDING LOGIC      ~~~
 # Config for chat message sending
 clear_timer = None
 last_send_time = 0
@@ -296,6 +298,7 @@ def send_shock(duration_s, intensity_percent):
                 time.sleep(0.5)
         return
 
+# ~~~      OSC MESSAGE HANDLER      ~~~
 # Handle incoming OSC packets
 def handle_osc_packet(address, *args):
     global last_trigger_time, trigger_timestamps
@@ -329,6 +332,7 @@ def handle_osc_packet(address, *args):
             send_chat_message(f"⚡ {intensity}% | {duration}s")
 
 
+# ~~~      Bezier Curve and Distribution Logic      ~~~
 # Bezier curve interpolation for rendering curve
 def bezier_interpolate(points, steps=100):
     # Prepare points and curve
@@ -429,7 +433,7 @@ def finish_text_edit(event=None):
 
     # Update point and re-render
     UI_CONTROL_POINTS[nearest] = (x_val, y_val)
-    persist_config()
+    save_config()
     render_curve()
 
 # Mouse press handler
@@ -500,7 +504,7 @@ def on_mouse_release(event):
     
     dragging_index = None
     drag_context.clear()
-    persist_config()
+    save_config()
 
 # Mouse motion handler
 def on_mouse_motion(event):
@@ -609,7 +613,7 @@ def render_curve():
 
 # Slider release handler
 def on_slider_release(event):
-    persist_config()
+    save_config()
 
 # UI mouse position update
 def update_mouse_position_label(event):
@@ -658,7 +662,7 @@ min_duration_scale = ttk.Scale(frame_controls, from_=0.1, to=5, orient=tk.HORIZO
 min_duration_scale.set(MIN_SHOCK_DURATION)
 min_duration_scale.pack(fill=tk.X)
 min_duration_scale.bind("<ButtonPress-1>", lambda e: load_undo_snapshot())
-min_duration_scale.bind("<ButtonRelease-1>", lambda e: persist_config())
+min_duration_scale.bind("<ButtonRelease-1>", lambda e: save_config())
 
 max_duration_var = tk.StringVar(value=f"Max Duration ({MAX_SHOCK_DURATION:.1f}s)")
 ttk.Label(frame_controls, textvariable=max_duration_var).pack()
@@ -666,7 +670,7 @@ max_duration_scale = ttk.Scale(frame_controls, from_=0.1, to=5, orient=tk.HORIZO
 max_duration_scale.set(MAX_SHOCK_DURATION)
 max_duration_scale.pack(fill=tk.X)
 max_duration_scale.bind("<ButtonPress-1>", lambda e: load_undo_snapshot())
-max_duration_scale.bind("<ButtonRelease-1>", lambda e: persist_config())
+max_duration_scale.bind("<ButtonRelease-1>", lambda e: save_config())
 
 frame_plot = ttk.Frame(root)
 frame_plot.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
@@ -689,7 +693,7 @@ ui_min_scale = ttk.Scale(minmax_frame, from_=1, to=99, orient=tk.HORIZONTAL, com
 ui_min_scale.set(UI_VIEW_MIN_PERCENT)
 ui_min_scale.pack(fill=tk.X)
 ui_min_scale.bind("<ButtonPress-1>", lambda e: load_undo_snapshot())
-ui_min_scale.bind("<ButtonRelease-1>", lambda e: persist_config())
+ui_min_scale.bind("<ButtonRelease-1>", lambda e: save_config())
 
 max_view_var = tk.StringVar(value=f"UI View Max ({int(UI_VIEW_MAX_PERCENT)}%)")
 ttk.Label(minmax_frame, text="UI View Max %", textvariable=max_view_var).pack(anchor='w')
@@ -697,7 +701,7 @@ ui_max_scale = ttk.Scale(minmax_frame, from_=2, to=100, orient=tk.HORIZONTAL, co
 ui_max_scale.set(UI_VIEW_MAX_PERCENT)
 ui_max_scale.pack(fill=tk.X)
 ui_max_scale.bind("<ButtonPress-1>", lambda e: load_undo_snapshot())
-ui_max_scale.bind("<ButtonRelease-1>", lambda e: persist_config())
+ui_max_scale.bind("<ButtonRelease-1>", lambda e: save_config())
 
 label_save_toggle = tk.Label(root, text="Enable Saving", bg=BACKGROUND_COLOR, fg='white')
 label_save_toggle.place(relx=0.01, rely=0.93, anchor='sw')
@@ -776,7 +780,7 @@ def toggle_saving():
 
 # Shutdown logic
 def shutdown():
-    persist_config()
+    save_config()
     if server:
         print("Stopping server")
         server.shutdown()
