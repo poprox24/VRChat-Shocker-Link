@@ -16,6 +16,7 @@ import os
 
 # --- NETWORK / Serial Config
 USE_PISHOCK = False # Set to True if using PiShock, False for OpenShock
+OPENSHOCK_SHOCKER_ID = 41838 # If this ID doesn't work, inspect your shocker device ID
 VRCHAT_HOST = "127.0.0.1"
 OSC_LISTEN_PORT = 9001
 OSC_SEND_PORT = 9000
@@ -299,7 +300,6 @@ def send_chat_message(message_text, clear_after=True):
         print(f"Sent message: {message_text}")
 
 # Send shock command via serial
-"""DON'T FORGET TO IMPLEMENT ID AUTODETECT FOR OPENSHOCK"""
 def send_shock(duration_s, intensity_percent):
     global serial_connection, shocker
 
@@ -313,7 +313,7 @@ def send_shock(duration_s, intensity_percent):
             # Data for shock
             payload = {
                 "model": "caixianlin",
-                "id": 41838,
+                "id": OPENSHOCK_SHOCKER_ID,
                 "type": "shock",
                 "intensity": int(intensity_percent),
                 "durationMs": int(round(float(duration_s) * 1000))
