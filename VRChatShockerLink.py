@@ -371,12 +371,12 @@ def handle_osc_packet(address, *args):
             if address == SHOCK_PARAM:
                 # For main shock param, use full curve
                 intensity = int(random.choices(intensities, weights=weights, k=1)[0])
-                duration = round(random.uniform(MIN_SHOCK_DURATION, MAX_SHOCK_DURATION), 1)
             else:
                 # For second shock param, use only the upper half of the curve
                 half = len(intensities) // 2
-                intensities = intensities[half:]
-                weights = weights[half:]
+                intensity = int(random.choices(intensities[half:], weights=weights[half:], k=1)[0])
+
+            duration = round(random.uniform(MIN_SHOCK_DURATION, MAX_SHOCK_DURATION), 1)
 
             # Send shock and chat message
             send_shock(duration_s=duration, intensity_percent=intensity)
