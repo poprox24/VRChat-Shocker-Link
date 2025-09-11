@@ -12,7 +12,6 @@ REM Activate venv
 echo Activating virtual environment...
 call ".venv\Scripts\activate.bat"
 
-echo [%~n0] Checking for updates...
 call UpdateScripts.bat
 
 echo [%~n0] Installing requirements (Requires python 3.11+ ideally)
