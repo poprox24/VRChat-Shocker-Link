@@ -94,6 +94,7 @@ Don't forget to give the project a star! Thanks again!
 5. Open a Pull Request
 
 
+
 ### Top contributors:
 
 <a href="https://github.com/poprox24/VRChat-Shocker-Link/graphs/contributors">
@@ -107,7 +108,7 @@ Don't forget to give the project a star! Thanks again!
 
 Distributed under the MIT License. See `LICENSE.txt` for more information.
 
-<br />
+
 
 <!-- CONTACT -->
 ## Contact
