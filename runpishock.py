@@ -3,8 +3,11 @@ import time
 import tkinter as tk
 from tkinter import ttk
 import serial
+from serial.tools import list_ports
 from pythonosc import dispatcher as osc_dispatcher, osc_server, udp_client
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from pishock import SerialAPI
+from pishock.zap.serialapi import SerialAutodetectError, SerialAPI
 import matplotlib.pyplot as plt
 import numpy as np
 import threading
@@ -12,12 +15,13 @@ import json
 import os
 
 # --- NETWORK / Serial Config
+USE_PISHOCK = False # Set to True if using PiShock, False for OpenShock
 VRCHAT_HOST = "127.0.0.1"
 OSC_LISTEN_PORT = 9001
 OSC_SEND_PORT = 9000
-SERIAL_PORT_NAME = "COM4"
 SERIAL_BAUDRATE = 115200
-SHOCK_PARAM = "/avatar/parameters/Shock"
+SERIAL_PORT = "" # Leave blank to auto-detect
+SHOCK_PARAM = "/avatar/parameters/Tan"
 
 # Base config
 BASE_COOLDOWN_S = 2
@@ -60,6 +64,10 @@ redo_history = []
 trigger_timestamps = []
 last_trigger_time = 0
 
+# Pishock Vars
+pishock_api = SerialAPI(port=None) if USE_PISHOCK else None
+shocker = None
+
 
 # ~~~      OSC / SERIAL SETUP      ~~~
 osc_sender = None
@@ -79,20 +87,44 @@ def setup_osc_sender():
 
 serial_connection = None
 def connect_serial():
-    global serial_connection
+    global serial_connection, pishock_api, shocker
 
-    if serial_connection is None or not getattr(serial_connection, "is_open", False):
-        try:
+    if not USE_PISHOCK:
+        if serial_connection is None or not getattr(serial_connection, "is_open", False):
+            # If no port specified, scan automatically
+            ports = []
+            if SERIAL_PORT.strip():
+                ports = [SERIAL_PORT]
+            else:
+                ports = [p.device for p in serial.tools.list_ports.comports()]
+
+            print(f"Available ports: {ports}")
+
             for attempt in range(3):
-                try:
-                    serial_connection = serial.Serial(SERIAL_PORT_NAME, SERIAL_BAUDRATE, timeout=1)
-                    print(f"Reconnected to serial port {SERIAL_PORT_NAME}")
-                    break
-                except Exception as e:
-                    print(f"Reconnection attempt {attempt+1}/3 to serial port failed: {e}. Retrying in 3 seconds...")
-                    time.sleep(3)
-        except Exception as e:
-            print(f"Failed to open serial: {e}. Maximum retries reached. Shocks will be disabled until serial is available.")
+                for port in ports:
+                    try:
+                        serial_connection = serial.Serial(port, SERIAL_BAUDRATE, timeout=1)
+                        print(f"Connected to serial port {port}")
+                        return serial_connection
+                    except Exception as e:
+                        print(f"Failed on {port}: {e}")
+                print(f"Reconnection attempt {attempt+1}/3 failed. Retrying in 3 seconds...")
+                time.sleep(3)
+
+            print("Failed to open serial. Shocks disabled.")
+            serial_connection = None
+            return None
+    else:
+        # Find pishock shocker
+        info = pishock_api.info()
+        shockers = info.get("shockers", [])
+        first_shocker_id = shockers[0]["id"] if shockers else None
+        if first_shocker_id is not None:
+            print(f"Found shocker with ID {first_shocker_id}")
+            shocker = pishock_api.shocker(first_shocker_id)
+        else:
+            print("No shockers found.")
+
 
 # Initial connection attempt
 # Try to connect to serial
@@ -237,7 +269,7 @@ MESSAGE_COOLDOWN = 1.2
 
 # Send chat message via OSC with cooldown and auto-clear
 def send_chat_message(message_text, clear_after=True):
-    global clear_timer
+    global clear_timer, last_send_time
 
     with send_lock:
         now = time.time()
@@ -267,36 +299,43 @@ def send_chat_message(message_text, clear_after=True):
         print(f"Sent message: {message_text}")
 
 # Send shock command via serial
+"""DON'T FORGET TO IMPLEMENT ID AUTODETECT FOR OPENSHOCK"""
 def send_shock(duration_s, intensity_percent):
-    global serial_connection
+    global serial_connection, shocker
 
-    if serial_connection is None or not getattr(serial_connection, "is_open", True):
-        print("Serial not available. Cannot send shock.\nAttempting to reconnect...")
-        connect_serial()
-        return
-    try:
-        # Data for shock
-        payload = {
-            "model": "caixianlin",
-            "id": 41838,
-            "type": "shock",
-            "intensity": int(intensity_percent),
-            "durationMs": int(round(float(duration_s) * 1000))
-        }
-        cmd = "rftransmit " + json.dumps(payload)
-        serial_connection.write((cmd + "\n").encode("utf-8"))
-        serial_connection.flush()
-        return True
-    except Exception as e:
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                serial_connection.write(cmd.encode())
-                return True
-            except Exception as e:
-                print(f"Failed to write to serial (Attempt {attempt+1}/{max_retries}):", e)
-                time.sleep(0.5)
-        return
+    # Using OpenShock
+    if not USE_PISHOCK:
+        if serial_connection is None or not getattr(serial_connection, "is_open", True):
+            print("Serial not available. Cannot send shock.\nAttempting to reconnect...")
+            connect_serial()
+            return
+        try:
+            # Data for shock
+            payload = {
+                "model": "caixianlin",
+                "id": 41838,
+                "type": "shock",
+                "intensity": int(intensity_percent),
+                "durationMs": int(round(float(duration_s) * 1000))
+            }
+            cmd = "rftransmit " + json.dumps(payload)
+            serial_connection.write((cmd + "\n").encode("utf-8"))
+            serial_connection.flush()
+            return True
+        except Exception as e:
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    serial_connection.write(cmd.encode())
+                    return True
+                except Exception as e:
+                    print(f"Failed to write to serial (Attempt {attempt+1}/{max_retries}):", e)
+                    time.sleep(0.5)
+            return
+    else:
+        # Using PiShock
+        shocker.shock(duration=round(float(duration_s), 1), intensity=int(intensity_percent))
+
 
 # ~~~      OSC MESSAGE HANDLER      ~~~
 # Handle incoming OSC packets
@@ -795,9 +834,9 @@ def shutdown():
     try:
         if serial_connection and getattr(serial_connection, "is_open", False):
             serial_connection.close()
-            print("closed serial port")
+            print("Closed serial port")
     except Exception as e:
-        print("error closing serial:", e)
+        print("Error closing serial:", e)
     root.destroy()
 
 # Start OSC server thread
