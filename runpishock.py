@@ -21,7 +21,7 @@ OSC_LISTEN_PORT = 9001
 OSC_SEND_PORT = 9000
 SERIAL_BAUDRATE = 115200
 SERIAL_PORT = "" # Leave blank to auto-detect
-SHOCK_PARAM = "/avatar/parameters/Tan"
+SHOCK_PARAM = "/avatar/parameters/Shock"
 
 # Base config
 BASE_COOLDOWN_S = 2
