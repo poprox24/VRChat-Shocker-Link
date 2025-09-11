@@ -11,7 +11,7 @@
 <br />
 <div align="center">
   <a href="https://github.com/poprox24/VRChat-Shocker-Link">
-    <img src="preview.png" alt="Preview" width="803" height="537">
+    <img src="Media/preview.png" alt="Preview" width="803" height="537">
   </a>
 
 <h3 align="center">VRChat Shocker Link</h3>
@@ -22,8 +22,8 @@
     It has chat message support, curve for intensity and a few more settings you can easily change in the UI
     <br />
     <br />
-    <!-- <a href="https://github.com/github_username/repo_name">View Demo</a> 
-    &middot; -->
+    <video controls>
+      <source src="Media/demo.mp4" type="video/mp4">
     <a href="https://github.com/poprox24/VRChat-Shocker-Link/issues/new?labels=bug">Report Bug or Request Feature</a>
   </p>
 </div>
