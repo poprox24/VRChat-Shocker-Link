@@ -43,7 +43,7 @@ if __name__ == "__main__":
     update_zip = fetch_latest_repo_zip()
     with zipfile.ZipFile(io.BytesIO(update_zip), 'r') as zf:
         for file in zf.filelist:
-            if 'Config.yml' in file.filename:
+            if 'config.yml' in file.filename:
                 continue
             print(f"[Updatecheck] Extracting {file.filename}")
             zf.extract(file, "update")
