@@ -14,8 +14,8 @@ import os
 
 # --- NETWORK / Serial Config
 VRCHAT_HOST = "127.0.0.1"
-OSC_LISTEN_PORT = 9203
-OSC_SEND_PORT = 9102
+OSC_LISTEN_PORT = 9001
+OSC_SEND_PORT = 9000
 SERIAL_PORT_NAME = "COM4"
 SERIAL_BAUDRATE = 115200
 serial_conn = None
@@ -178,12 +178,40 @@ def redo_action(event=None):
     persist_config()
 
 
-def send_chat_message(message_text):
-    try:
-        osc_sender.send_message("/chatbox/input", [message_text, True, False])
-    except Exception as e:
-        print("OSC send failed:", e)
-    print(f"Sent message: {message_text}")
+clear_timer = None
+last_send_time = 0
+send_lock = threading.Lock()
+MESSAGE_COOLDOWN = 1.2
+
+def send_chat_message(message_text, clear_after=True):
+    global clear_timer
+
+    with send_lock:
+        now = time.time()
+        # Always allow shock messages to bypass message cooldown
+        bypass = "⚡" in message_text
+
+        if not bypass and now - last_send_time < MESSAGE_COOLDOWN:
+            return
+        last_send_time = now
+
+        try:
+            osc_sender.send_message("/chatbox/input", [message_text, True, False])
+
+            # Schedule a clear if a message is sent
+            if clear_after:
+
+                # If a new message is sent, cancel any existing clear timer
+                if clear_timer is not None:
+                    clear_timer.cancel()
+                
+                # Schedule a new clear timer
+                clear_timer = threading.Timer(4, send_chat_message, args=("", False))
+                clear_timer.start()
+
+        except Exception as e:
+            print("OSC send failed:", e)
+        print(f"Sent message: {message_text}")
 
 def send_shock(duration_s, intensity_percent):
     global serial_conn
