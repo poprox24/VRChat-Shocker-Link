@@ -11,7 +11,7 @@
 <br />
 <div align="center">
   <a href="https://github.com/poprox24/VRChat-Shocker-Link">
-    <img src="Media/preview.png" alt="Preview" width="803" height="537">
+    <img width="803" height="537" alt="preview" src="https://github.com/user-attachments/assets/e6d6c89f-0010-4fa9-8b07-d78f1263211b" />
   </a>
 
 <h3 align="center">VRChat Shocker Link</h3>
