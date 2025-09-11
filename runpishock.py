@@ -18,21 +18,9 @@ OSC_LISTEN_PORT = 9001
 OSC_SEND_PORT = 9000
 SERIAL_PORT_NAME = "COM4"
 SERIAL_BAUDRATE = 115200
-serial_conn = None
-
-UI_CONTROL_POINTS = [(1, 1.0), (50, 1.0), (100, 1.0)]
-
-osc_sender = udp_client.SimpleUDPClient(VRCHAT_HOST, OSC_SEND_PORT)
-
-try:
-    serial_conn = serial.Serial(SERIAL_PORT_NAME, SERIAL_BAUDRATE, timeout=1)
-except Exception as e:
-    print(f"Failed to open serial: {e}. Shocks will be disabled until serial is available.")
-
 SHOCK_PARAM = "/avatar/parameters/Shock"
 
-
-# Base settings
+# Base config
 BASE_COOLDOWN_S = 2
 MAX_COOLDOWN_S = 6
 COOLDOWN_FACTOR_S = 0.4
@@ -44,23 +32,11 @@ MAX_SHOCK_DURATION = 1.7
 
 UI_VIEW_MIN_PERCENT = 1
 UI_VIEW_MAX_PERCENT = 100
-
-
-# Timestamps for trigger cooldown
-trigger_timestamps = []
-last_trigger_time = 0
-
-# Undo/Redo history
-undo_history = []
-redo_history = []
+UI_CONTROL_POINTS = [(1, 1.0), (50, 1.0), (100, 1.0)]
 
 CONFIG_FILE_PATH = "curve_config.json"
 
-# Drag/Edit state
-dragging_index = None
-right_click_input_widget = None
-
-# Style settings
+# Style config
 TOUCH_SELECT_THRESHOLD = 8
 TOUCH_MARKER_SIZE = 140
 LINE_WIDTH = 3
@@ -71,13 +47,67 @@ CURVE_LINE_COLOR = "#00c2ff"
 MARKER_COLOR = "#D88A91"
 LABEL_COLOR = "#e6eef6"
 
+# Drag/Edit state
+dragging_index = None
+right_click_input_widget = None
 drag_context = {}
 
+# Undo/Redo history
+undo_history = []
+redo_history = []
+
+# Timestamps for trigger cooldown
+trigger_timestamps = []
+last_trigger_time = 0
+
+# OSC client for sending chat messages
+
+osc_sender = None
+def setup_osc_sender():
+    global osc_sender
+    if osc_sender is None:
+        try:
+            for attempt in range(3):
+                try:
+                    osc_sender = udp_client.SimpleUDPClient(VRCHAT_HOST, OSC_SEND_PORT)
+                    break
+                except Exception as e:
+                    print(f"OSC sender setup attempt {attempt+1}/3 failed: {e}. Retrying in 3 seconds...")
+                    time.sleep(3)
+        except Exception as e:
+            print(f"Failed to set up OSC sender: {e}. Maximum retries reached.")
+
+
+serial_connection = None
+def connect_serial():
+    global serial_connection
+
+    if serial_connection is None or not getattr(serial_connection, "is_open", False):
+        try:
+            for attempt in range(3):
+                try:
+                    serial_connection = serial.Serial(SERIAL_PORT_NAME, SERIAL_BAUDRATE, timeout=1)
+                    print(f"Reconnected to serial port {SERIAL_PORT_NAME}")
+                    break
+                except Exception as e:
+                    print(f"Reconnection attempt {attempt+1}/3 to serial port failed: {e}. Retrying in 3 seconds...")
+                    time.sleep(3)
+        except Exception as e:
+            print(f"Failed to open serial: {e}. Maximum retries reached. Shocks will be disabled until serial is available.")
+
+# Initial connection attempt
+# Try to connect to serial
+connect_serial()
+
+# Try to set up OSC sender
+setup_osc_sender()
+
+# Attempt to load config, default if not found or error
 if os.path.exists(CONFIG_FILE_PATH):
     try:
         with open(CONFIG_FILE_PATH, "r") as f:
             data = json.load(f)
-        loaded_pts = [(float(x), float(y)) for x, y in data.get("curve_points", [])]
+        loaded_pts = [(float(x), float(y)) for x, y in data.get("curve_points", UI_CONTROL_POINTS)]
         UI_CONTROL_POINTS.clear()
         UI_CONTROL_POINTS.extend(loaded_pts)
         MIN_SHOCK_DURATION = float(data.get("min_duration", MIN_SHOCK_DURATION))
@@ -87,13 +117,13 @@ if os.path.exists(CONFIG_FILE_PATH):
     except Exception as e:
         print("Config load failed:", e)
 
-if not UI_CONTROL_POINTS:
-    UI_CONTROL_POINTS = [(1, 1.0), (50, 1.0), (100, 1.0)]
-
-
+# Save new config to file
 def persist_config():
+    # Do not save if disabled
     if not save_enabled_var.get():
         return
+    
+    # Prepare data
     data = {
         "curve_points": [(round(x, 2), round(y, 2)) for x, y in UI_CONTROL_POINTS],
         "min_duration": round(MIN_SHOCK_DURATION, 1),
@@ -101,6 +131,8 @@ def persist_config():
         "ui_min_x": UI_VIEW_MIN_PERCENT,
         "ui_max_x": UI_VIEW_MAX_PERCENT,
     }
+
+    # Write to file
     try:
         with open(CONFIG_FILE_PATH, "w") as f:
             json.dump(data, f)
@@ -108,7 +140,9 @@ def persist_config():
         print("Failed to save config:", e)
 
 
+# Save current state to undo history
 def load_undo_snapshot():
+    # Prepare data
     snapshot = {
         "curve_points": UI_CONTROL_POINTS.copy(),
         "min_duration": MIN_SHOCK_DURATION,
@@ -116,22 +150,29 @@ def load_undo_snapshot():
         "ui_min_x": UI_VIEW_MIN_PERCENT,
         "ui_max_x": UI_VIEW_MAX_PERCENT,
     }
+
+    # Push to undo stack
     undo_history.append(snapshot)
+
+    # Limit history size
     if len(undo_history) > 50:
         undo_history.pop(0)
+
+    # Clear redo history
     redo_history.clear()
 
-
+# Apply a snapshot
 def apply_snapshot(snapshot):
     global MIN_SHOCK_DURATION, MAX_SHOCK_DURATION, UI_VIEW_MIN_PERCENT, UI_VIEW_MAX_PERCENT
+    
     UI_CONTROL_POINTS.clear()
-    UI_CONTROL_POINTS.extend(snapshot["curve_points"])  # in-place
-
+    UI_CONTROL_POINTS.extend(snapshot["curve_points"])
     MIN_SHOCK_DURATION = snapshot["min_duration"]
     MAX_SHOCK_DURATION = snapshot["max_duration"]
     UI_VIEW_MIN_PERCENT = snapshot["ui_min_x"]
     UI_VIEW_MAX_PERCENT = snapshot["ui_max_x"]
 
+    # Update UI elements
     try:
         min_duration_scale.set(MIN_SHOCK_DURATION)
         max_duration_scale.set(MAX_SHOCK_DURATION)
@@ -145,10 +186,13 @@ def apply_snapshot(snapshot):
         pass
 
 
+# Undo action
 def undo_action(event=None):
+    # If there is nothing to undo, return
     if not undo_history:
         return
-    # push current full state to redo
+    
+    # Push current snapshot to redo history
     redo_history.append({
         "curve_points": UI_CONTROL_POINTS.copy(),
         "min_duration": MIN_SHOCK_DURATION,
@@ -156,15 +200,19 @@ def undo_action(event=None):
         "ui_min_x": UI_VIEW_MIN_PERCENT,
         "ui_max_x": UI_VIEW_MAX_PERCENT,
     })
-    snap = undo_history.pop()
-    apply_snapshot(snap)
+
+    # Remove last undo snapshot and apply it
+    snapshot = undo_history.pop()
+    apply_snapshot(snapshot)
     render_curve()
     persist_config()
 
-
+# Redo action
 def redo_action(event=None):
     if not redo_history:
         return
+    
+    # Push current snapshot to undo history
     undo_history.append({
         "curve_points": UI_CONTROL_POINTS.copy(),
         "min_duration": MIN_SHOCK_DURATION,
@@ -172,17 +220,21 @@ def redo_action(event=None):
         "ui_min_x": UI_VIEW_MIN_PERCENT,
         "ui_max_x": UI_VIEW_MAX_PERCENT,
     })
+
+    # Remove last redo snapshot and apply it
     snap = redo_history.pop()
     apply_snapshot(snap)
     render_curve()
     persist_config()
 
 
+# Config for chat message sending
 clear_timer = None
 last_send_time = 0
 send_lock = threading.Lock()
 MESSAGE_COOLDOWN = 1.2
 
+# Send chat message via OSC with cooldown and auto-clear
 def send_chat_message(message_text, clear_after=True):
     global clear_timer
 
@@ -213,12 +265,16 @@ def send_chat_message(message_text, clear_after=True):
             print("OSC send failed:", e)
         print(f"Sent message: {message_text}")
 
+# Send shock command via serial
 def send_shock(duration_s, intensity_percent):
-    global serial_conn
-    if serial_conn is None or not getattr(serial_conn, "is_open", True):
-        print("Serial not available. Cannot send shock")
-        return False
+    global serial_connection
+
+    if serial_connection is None or not getattr(serial_connection, "is_open", True):
+        print("Serial not available. Cannot send shock.\nAttempting to reconnect...")
+        connect_serial()
+        return
     try:
+        # Data for shock
         payload = {
             "model": "caixianlin",
             "id": 41838,
@@ -227,24 +283,28 @@ def send_shock(duration_s, intensity_percent):
             "durationMs": int(round(float(duration_s) * 1000))
         }
         cmd = "rftransmit " + json.dumps(payload)
-        serial_conn.write((cmd + "\n").encode("utf-8"))
-        serial_conn.flush()
+        serial_connection.write((cmd + "\n").encode("utf-8"))
+        serial_connection.flush()
         return True
     except Exception as e:
         max_retries = 3
         for attempt in range(max_retries):
             try:
-                serial_conn.write(cmd.encode())
+                serial_connection.write(cmd.encode())
                 return True
             except Exception as e:
                 print(f"Failed to write to serial (Attempt {attempt+1}/{max_retries}):", e)
                 time.sleep(0.5)
-        return False
+        return
 
-
+# Handle incoming OSC packets
 def handle_osc_packet(address, *args):
     global last_trigger_time, trigger_timestamps
+
+    # Only accept valid shock parameter
     if address == SHOCK_PARAM and args:
+
+        # If parameter equals 1, continue
         param_value = args[0]
         if param_value == 1:
             now = time.time()
@@ -252,6 +312,7 @@ def handle_osc_packet(address, *args):
             trigger_count = len(trigger_timestamps)
             dynamic_cooldown = min(BASE_COOLDOWN_S + COOLDOWN_FACTOR_S * trigger_count, MAX_COOLDOWN_S)
 
+            # Check cooldown
             if COOLDOWN_ENABLED and now - last_trigger_time <= dynamic_cooldown:
                 send_chat_message(f"On cooldown: {round(last_trigger_time - now + dynamic_cooldown, 1)}s")
                 return
@@ -259,26 +320,35 @@ def handle_osc_packet(address, *args):
             last_trigger_time = now
             trigger_timestamps.append(now)
 
+            # Determine shock intensity and duration
             intensities, weights = compute_curve_distribution()
             intensity = int(random.choices(intensities, weights=weights, k=1)[0])
             duration = round(random.uniform(MIN_SHOCK_DURATION, MAX_SHOCK_DURATION), 1)
 
+            # Send shock and chat message
             send_shock(duration_s=duration, intensity_percent=intensity)
             send_chat_message(f"⚡ {intensity}% | {duration}s")
 
 
+# Bezier curve interpolation for rendering curve
 def bezier_interpolate(points, steps=100):
+    # Prepare points and curve
     p0, p1, p2 = points
-    t_vals = np.linspace(0, 1, steps)
     curve = []
+    # Calculate curve points
+    t_vals = np.linspace(0, 1, steps)
+    # Quadratic Bezier formula
     for t in t_vals:
         x = (1 - t) ** 2 * p0[0] + 2 * (1 - t) * t * p1[0] + t ** 2 * p2[0]
         y = (1 - t) ** 2 * p0[1] + 2 * (1 - t) * t * p1[1] + t ** 2 * p2[1]
         curve.append((x, y))
+
     return np.array(curve)
 
-
+# Compute intensity distribution from curve
 def compute_curve_distribution():
+    # Generate a smooth curve from control points
+    # Honestly this is math I barely understand, but it works
     curve = bezier_interpolate(sorted(UI_CONTROL_POINTS, key=lambda p: p[0]), steps=200)
     curve = curve[curve[:, 1] > 0]
     xs = np.clip(curve[:, 0].astype(int), 1, 100)
@@ -288,18 +358,20 @@ def compute_curve_distribution():
     return xs, ys
 
 
+# ~~~      UI EVENT HANDLERS      ~~~
+# Min duration change
 def on_min_duration_change(val):
     global MIN_SHOCK_DURATION
     MIN_SHOCK_DURATION = float(val)
     min_duration_var.set(f"Min Duration ({float(val):.1f}s)")
 
-
+# Max duration change
 def on_max_duration_change(val):
     global MAX_SHOCK_DURATION
     MAX_SHOCK_DURATION = float(val)
     max_duration_var.set(f"Max Duration ({MAX_SHOCK_DURATION:.1f}s)")
 
-
+# UI view min change
 def on_ui_view_min_change(val):
     global UI_VIEW_MIN_PERCENT, UI_VIEW_MAX_PERCENT
     v = int(float(val))
@@ -310,7 +382,7 @@ def on_ui_view_min_change(val):
     min_view_var.set(f"UI View Min ({int(UI_VIEW_MIN_PERCENT)}%)")
     render_curve()
 
-
+# UI view max change
 def on_ui_view_max_change(val):
     global UI_VIEW_MIN_PERCENT, UI_VIEW_MAX_PERCENT
     v = int(float(val))
@@ -321,16 +393,24 @@ def on_ui_view_max_change(val):
     max_view_var.set(f"UI View Max ({int(UI_VIEW_MAX_PERCENT)}%)")
     render_curve()
 
-
+# Finish text edit from right-click entry
 def finish_text_edit(event=None):
     global right_click_input_widget
+
+    # If no widget, return
     if not right_click_input_widget:
         return
+    
+    # Parse input
     user_input = right_click_input_widget.get()
     right_click_input_widget.destroy()
     right_click_input_widget = None
+
+    # Validate input
     if not user_input:
         return
+    
+    # Expect format "x,y"
     try:
         x_str, y_str = user_input.split(",")
         x_val = float(x_str.strip())
@@ -338,22 +418,30 @@ def finish_text_edit(event=None):
     except Exception:
         print("Invalid input format")
         return
+    
+    # Find nearest point
     x_val = np.clip(x_val, 1, 100)
     y_val = np.clip(y_val, 0, 1)
     dists = [abs(p[0] - x_val) for p in UI_CONTROL_POINTS]
     nearest = int(np.argmin(dists))
 
-    load_undo_snapshot()  # snapshot BEFORE mutating
+    # Save snapshot before change
+    load_undo_snapshot()
+
+    # Update point and re-render
     UI_CONTROL_POINTS[nearest] = (x_val, y_val)
     persist_config()
     render_curve()
 
-
+# Mouse press handler
 def on_mouse_press(event):
     global dragging_index, right_click_input_widget, drag_context
+
+    # Ignore if not in axes
     if event.inaxes != ax:
         return
 
+    # Right-click to edit point
     if event.button == 3:
         if right_click_input_widget is not None:
             right_click_input_widget.destroy()
@@ -369,17 +457,22 @@ def on_mouse_press(event):
         right_click_input_widget.bind("<FocusOut>", finish_text_edit)
         return
 
+    # Left-click to drag point
     if event.xdata is None:
         return
 
+    # Find nearest point
     click_x = event.xdata
     dists = [abs(p[0] - click_x) for p in UI_CONTROL_POINTS]
     nearest = int(np.argmin(dists))
     if dists[nearest] < 5:
         dragging_index = nearest
+
+        # Save snapshot before change
         load_undo_snapshot()
 
         # Logic for the middle point follow
+        # Average the first and last points to stay relatively centered
         if len(UI_CONTROL_POINTS) == 3 and dragging_index in (0, 2):
             drag_context["dragged_endpoint"] = dragging_index
             drag_context["start_endpoint_pos"] = UI_CONTROL_POINTS[dragging_index]
@@ -402,18 +495,23 @@ def on_mouse_press(event):
                 drag_context["perp_mag"] = perp_mag
 
 
+# Mouse release handler
 def on_mouse_release(event):
     global dragging_index
+    
     dragging_index = None
     drag_context.clear()
     persist_config()
 
-
+# Mouse motion handler
 def on_mouse_motion(event):
     global dragging_index
+
+    # Ignore if not dragging
     if dragging_index is None or event.inaxes != ax or event.xdata is None:
         return
 
+    # Clamp to valid range
     new_x = np.clip(event.xdata, 1, 100)
     new_y = max(0, event.ydata)
 
@@ -430,6 +528,8 @@ def on_mouse_motion(event):
 
         UI_CONTROL_POINTS[1] = (mx0 + dx, my0 + dy)
 
+    # If we have a follow mode, adjust middle point accordingly
+    # Average the first and last points to stay relatively centered
     if len(UI_CONTROL_POINTS) == 3 and dragging_index in (0, 2) and "follow_mode" in drag_context:
         p0 = np.array(UI_CONTROL_POINTS[0])
         p2 = np.array(UI_CONTROL_POINTS[2])
@@ -449,11 +549,9 @@ def on_mouse_motion(event):
             new_mid = p0 + v_unit * (t * vlen) + perp_unit * perp_mag
 
         UI_CONTROL_POINTS[1] = (float(new_mid[0]), float(new_mid[1]))
-
-
     render_curve()
 
-
+# Render the curve and UI
 def render_curve():
     ax.clear()
     sorted_pts = sorted(UI_CONTROL_POINTS, key=lambda p: p[0])
@@ -510,11 +608,11 @@ def render_curve():
     fig.tight_layout(pad=1.2)
     canvas.draw_idle()
 
-
+# Slider release handler
 def on_slider_release(event):
     persist_config()
 
-
+# UI mouse position update
 def update_mouse_position_label(event):
     if event.inaxes != ax or event.xdata is None or event.ydata is None:
         mouse_pos_x.set("Intensity: -")
@@ -523,20 +621,25 @@ def update_mouse_position_label(event):
         mouse_pos_x.set(f"Intensity: {event.xdata:0.1f}")
         mouse_pos_y.set(f"Weight:    {event.ydata:0.2f}")
 
-
+# Toggle cooldown logic
 def toggle_cooldown_enabled():
     global COOLDOWN_ENABLED
+
     COOLDOWN_ENABLED = not COOLDOWN_ENABLED
     print(f"Cooldown {'enabled' if COOLDOWN_ENABLED else 'disabled'}")
 
+# ~~~      TKINTER UI SETUP      ~~~
 root = tk.Tk()
 root.title("Shock Control GUI")
 
 style = ttk.Style(root)
+
+# Apply a dark theme if available
 try:
     style.theme_use('clam')
 except Exception:
     pass
+
 style.configure('.', font=('Segoe UI', 11), padding=6)
 style.configure('TButton', padding=(10, 6), relief='flat')
 style.configure('TLabel', font=('Segoe UI', 11), background=BACKGROUND_COLOR, foreground='white')
@@ -544,7 +647,6 @@ style.configure('TCheckbutton', font=('Segoe UI', 11), background=BACKGROUND_COL
 style.configure('TFrame', background=BACKGROUND_COLOR)
 style.configure('TScale', troughcolor='#222', background=BACKGROUND_COLOR)
 root.configure(bg=BACKGROUND_COLOR)
-
 
 save_enabled_var = tk.BooleanVar(value=True)
 
@@ -625,7 +727,7 @@ for child in frame_controls.winfo_children():
     except Exception:
         pass
 
-# Bind Undo/\Redo
+# Bind Undo/Redo
 root.bind_all('<Control-z>', undo_action)
 root.bind_all('<Control-y>', redo_action)
 
@@ -634,6 +736,7 @@ render_curve()
 # Make an initial undo snapshot of the startup state
 load_undo_snapshot()
 
+# ~~~      OSC SERVER THREAD      ~~~
 server = None
 def run_osc_server():
     global server
@@ -643,9 +746,11 @@ def run_osc_server():
     print(f"Listening for OSC messages on: {VRCHAT_HOST}:{OSC_LISTEN_PORT}")
     server.serve_forever(poll_interval=0.3)
 
-
+# Toggle saving config
 def toggle_saving():
     global UI_CONTROL_POINTS, MIN_SHOCK_DURATION, MAX_SHOCK_DURATION, UI_VIEW_MIN_PERCENT, UI_VIEW_MAX_PERCENT
+
+    # If enabling, reload config from file to return to last saved state
     if save_enabled_var.get():
         if os.path.exists(CONFIG_FILE_PATH):
             try:
@@ -670,7 +775,7 @@ def toggle_saving():
                 print("Failed to reload config:", e)
     print(f"Saving {'enabled' if save_enabled_var.get() else 'disabled'}")
 
-
+# Shutdown logic
 def shutdown():
     persist_config()
     if server:
@@ -683,20 +788,21 @@ def shutdown():
             print("Poke failed:", e)
         osc_thread.join(timeout=1)
         server.server_close()
-    global serial_conn
+    global serial_connection
     try:
-        if serial_conn and getattr(serial_conn, "is_open", False):
-            serial_conn.close()
+        if serial_connection and getattr(serial_connection, "is_open", False):
+            serial_connection.close()
             print("closed serial port")
     except Exception as e:
         print("error closing serial:", e)
     root.destroy()
 
-
+# Start OSC server thread
 osc_thread = threading.Thread(target=run_osc_server, daemon=True)
 osc_thread.start()
 root.protocol("WM_DELETE_WINDOW", shutdown)
 
+# Start Tkinter main loop
 try:
     root.mainloop()
 except KeyboardInterrupt:
