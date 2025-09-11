@@ -52,7 +52,7 @@ https://github.com/user-attachments/assets/beff6062-4739-47cd-b56c-7f491de81a68
 <!-- GETTING STARTED -->
 ## Getting Started
 
-How to setup this repository
+How to setup this project
 
 ### Prerequisites
 
