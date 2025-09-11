@@ -68,6 +68,7 @@ Make sure to download this program before you continue:
 4. Open **config.yml**
 5. Change the **SHOCK_PARAMETER** to the parameter you created on your VRChat avatar and set **USE_PISHOCK** to true, if using a PiShock device
 6. Run **RunShockerLink.bat**
+    - If using an OpenShock and the shocker doesn't react, change the **OPENSHOCK_SHOCKER_ID** in **config.yml** to the one you set on the website
 
 <br />
 
