@@ -27,9 +27,6 @@ def load_json():
     return js
 
 if __name__ == "__main__":
-    if os.path.exists(".git"):
-        print("[Updatecheck] You are using git! Please run \"git pull\" manually to update.")
-        exit(0)
 
     hash, author, message = fetch_last_commit_info()
     if not os.path.exists("version.json"):

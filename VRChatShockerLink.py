@@ -11,17 +11,21 @@ import random
 import serial
 import time
 import json
+import yaml
 import os
 
+# Load config from YAML
+config = yaml.safe_load(open("config.yml"))
+
 # --- NETWORK / Serial Config
-USE_PISHOCK = False # Set to True if using PiShock, False for OpenShock
-OPENSHOCK_SHOCKER_ID = 41838 # Default openshock ID, change if needed
-VRCHAT_HOST = "127.0.0.1"
-OSC_LISTEN_PORT = 9001
-OSC_SEND_PORT = 9000
+USE_PISHOCK = config.get("USE_PISHOCK", False) # Use PiShock if True, else OpenShock
+OPENSHOCK_SHOCKER_ID = config.get("OPENSHOCK_SHOCKER_ID", 41838) # ID for OpenShock shocker
+VRCHAT_HOST = config.get("VRCHAT_HOST", "127.0.0.1")
+OSC_LISTEN_PORT = config.get("OSC_LISTEN_PORT", 9001)
+OSC_SEND_PORT = config.get("OSC_SEND_PORT", 9000)
 OPENSHOCK_SERIAL_BAUDRATE = 115200
-SERIAL_PORT = "" # Leave blank to auto-detect
-SHOCK_PARAM = "/avatar/parameters/Shock"
+SERIAL_PORT = config.get("serial_port", "")
+SHOCK_PARAM = f"/avatar/parameters/{config.get('SHOCK_PARAMETER', 'Shock')}" # OSC parameter to listen for shock trigger
 
 # Base config
 BASE_COOLDOWN_S = 2
@@ -33,22 +37,22 @@ COOLDOWN_ENABLED = True
 MIN_SHOCK_DURATION = 0.4
 MAX_SHOCK_DURATION = 1.7
 
-UI_VIEW_MIN_PERCENT = 1
-UI_VIEW_MAX_PERCENT = 100
-UI_CONTROL_POINTS = [(1, 1.0), (50, 1.0), (100, 1.0)]
+UI_VIEW_MIN_PERCENT = 30
+UI_VIEW_MAX_PERCENT = 68
+UI_CONTROL_POINTS = [(36, 0.5), (45, 0.4), (59, 0.25)]
 
 CONFIG_FILE_PATH = "curve_config.json"
 
 # Style config
-TOUCH_SELECT_THRESHOLD = 8
-TOUCH_MARKER_SIZE = 140
-LINE_WIDTH = 3
-OUTSIDE_CURVE_BG = "#2A313D"
-INSIDE_CURVE_BG = "#2C3749"
-BACKGROUND_COLOR = "#202630"
-CURVE_LINE_COLOR = "#00c2ff"
-MARKER_COLOR = "#D88A91"
-LABEL_COLOR = "#e6eef6"
+TOUCH_SELECT_THRESHOLD = config.get("TOUCH_SELECT_THRESHOLD", 8)
+TOUCH_MARKER_SIZE = config.get("TOUCH_MARKER_SIZE", 120)
+LINE_WIDTH = config.get("LINE_WIDTH", 3)
+OUTSIDE_CURVE_BG = config.get("OUTSIDE_CURVE_BG", "#2A313D")
+INSIDE_CURVE_BG = config.get("INSIDE_CURVE_BG", "#2C3749")
+BACKGROUND_COLOR = config.get("BACKGROUND_COLOR", "#202630")
+CURVE_LINE_COLOR = config.get("CURVE_LINE_COLOR", "#00C2FF")
+MARKER_COLOR = config.get("MARKER_COLOR", "#D88A91")
+LABEL_COLOR = config.get("LABEL_COLOR", "#E6EEF6")
 
 # ~~~      VARIABLES      ~~~
 # Drag/Edit state
