@@ -1,3 +1,4 @@
 curve_config.json
 .venv/*
 version.json
+.code-workspace
