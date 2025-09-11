@@ -16,7 +16,7 @@ import os
 
 # --- NETWORK / Serial Config
 USE_PISHOCK = False # Set to True if using PiShock, False for OpenShock
-OPENSHOCK_SHOCKER_ID = 41838 # If this ID doesn't work, inspect your shocker device ID
+OPENSHOCK_SHOCKER_ID = 41838 # If this ID doesn't work, insert your shocker device ID
 VRCHAT_HOST = "127.0.0.1"
 OSC_LISTEN_PORT = 9001
 OSC_SEND_PORT = 9000
