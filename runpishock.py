@@ -2,7 +2,6 @@ import random
 import time
 import tkinter as tk
 from tkinter import ttk
-# replaced pishock with pyserial
 import serial
 from pythonosc import dispatcher as osc_dispatcher, osc_server, udp_client
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
