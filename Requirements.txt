@@ -2,6 +2,5 @@ python-osc
 matplotlib
 pyserial
 pishock
-tkinter
 numpy
-serial
+requests
