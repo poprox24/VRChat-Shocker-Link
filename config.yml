@@ -1,5 +1,6 @@
 # --- NETWORK / Serial Config
 SHOCK_PARAMETER: "Shock" # Input the parameter name you want to use for the shock
+SECOND_SHOCK_PARAMETER: "" # Optional second parameter for stronger shocks, takes only the second half of the curve into account
 USE_PISHOCK: False # Set to True if using PiShock, False for OpenShock
 OPENSHOCK_SHOCKER_ID: 41838 # Default openshock ID, change if needed
 SERIAL_PORT: "" # Leave blank to auto-detect

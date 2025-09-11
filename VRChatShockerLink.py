@@ -26,6 +26,7 @@ OSC_SEND_PORT = config.get("OSC_SEND_PORT", 9000)
 OPENSHOCK_SERIAL_BAUDRATE = 115200
 SERIAL_PORT = config.get("serial_port", "")
 SHOCK_PARAM = f"/avatar/parameters/{config.get('SHOCK_PARAMETER', 'Shock')}" # OSC parameter to listen for shock trigger
+SECOND_SHOCK_PARAM = f"/avatar/parameters/{config.get('SECOND_SHOCK_PARAMETER', 'SlapShock') or 'SlapShock'}" # Seccond parameter for stronger shocks, if empty use "SlapShock" to prevent false OSC triggers
 
 # Base config
 BASE_COOLDOWN_S = 2
@@ -346,7 +347,7 @@ def handle_osc_packet(address, *args):
     global last_trigger_time, trigger_timestamps
 
     # Only accept valid shock parameter
-    if address == SHOCK_PARAM and args:
+    if (address == SHOCK_PARAM or address == SECOND_SHOCK_PARAM) and args:
 
         # If parameter equals 1, continue
         param_value = args[0]
@@ -366,8 +367,15 @@ def handle_osc_packet(address, *args):
 
             # Determine shock intensity and duration
             intensities, weights = compute_curve_distribution()
-            intensity = int(random.choices(intensities, weights=weights, k=1)[0])
-            duration = round(random.uniform(MIN_SHOCK_DURATION, MAX_SHOCK_DURATION), 1)
+
+            if address == SHOCK_PARAM:
+                intensity = int(random.choices(intensities, weights=weights, k=1)[0])
+                duration = round(random.uniform(MIN_SHOCK_DURATION, MAX_SHOCK_DURATION), 1)
+            else:
+                # For second shock param, use only the upper half of the curve
+                half = len(intensities) // 2
+                intensities = intensities[half:]
+                weights = weights[half:]
 
             # Send shock and chat message
             send_shock(duration_s=duration, intensity_percent=intensity)
