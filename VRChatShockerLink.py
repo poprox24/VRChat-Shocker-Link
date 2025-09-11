@@ -694,6 +694,7 @@ try:
 except Exception:
     pass
 
+# Configure styles
 style.configure('.', font=('Segoe UI', 11), padding=6)
 style.configure('TButton', padding=(10, 6), relief='flat')
 style.configure('TLabel', font=('Segoe UI', 11), background=BACKGROUND_COLOR, foreground='white')
@@ -702,11 +703,11 @@ style.configure('TFrame', background=BACKGROUND_COLOR)
 style.configure('TScale', troughcolor='#222', background=BACKGROUND_COLOR)
 root.configure(bg=BACKGROUND_COLOR)
 
-save_enabled_var = tk.BooleanVar(value=True)
-
+# Main frame
 frame_controls = ttk.Frame(root)
 frame_controls.pack(side=tk.LEFT, fill=tk.Y, padx=5, pady=5)
 
+# MIN DURATION SLIDER
 min_duration_var = tk.StringVar(value=f"Min Duration ({MIN_SHOCK_DURATION:.1f}s)")
 ttk.Label(frame_controls, textvariable=min_duration_var).pack()
 min_duration_scale = ttk.Scale(frame_controls, from_=0.1, to=5, orient=tk.HORIZONTAL, command=on_min_duration_change)
@@ -715,6 +716,7 @@ min_duration_scale.pack(fill=tk.X)
 min_duration_scale.bind("<ButtonPress-1>", lambda e: load_undo_snapshot())
 min_duration_scale.bind("<ButtonRelease-1>", lambda e: save_config())
 
+# MAX DURATION SLIDER
 max_duration_var = tk.StringVar(value=f"Max Duration ({MAX_SHOCK_DURATION:.1f}s)")
 ttk.Label(frame_controls, textvariable=max_duration_var).pack()
 max_duration_scale = ttk.Scale(frame_controls, from_=0.1, to=5, orient=tk.HORIZONTAL, command=on_max_duration_change)
@@ -723,21 +725,19 @@ max_duration_scale.pack(fill=tk.X)
 max_duration_scale.bind("<ButtonPress-1>", lambda e: load_undo_snapshot())
 max_duration_scale.bind("<ButtonRelease-1>", lambda e: save_config())
 
+# PLOT FRAME
 frame_plot = ttk.Frame(root)
 frame_plot.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
 
+# Matplotlib figure and canvas
 fig, ax = plt.subplots(figsize=(5, 4))
 canvas = FigureCanvasTkAgg(fig, master=frame_plot)
 canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
-canvas.mpl_connect("button_press_event", on_mouse_press)
-canvas.mpl_connect("button_release_event", on_mouse_release)
-canvas.mpl_connect("motion_notify_event", on_mouse_motion)
-canvas.mpl_connect("motion_notify_event", update_mouse_position_label)
-
 minmax_frame = ttk.Frame(frame_plot)
 minmax_frame.pack(fill=tk.X, pady=5)
 
+# UI VIEW MIN SLIDER
 min_view_var = tk.StringVar(value=f"UI View Min ({int(UI_VIEW_MIN_PERCENT)}%)")
 ttk.Label(minmax_frame, text="UI View Min %", textvariable=min_view_var).pack(anchor='w')
 ui_min_scale = ttk.Scale(minmax_frame, from_=1, to=99, orient=tk.HORIZONTAL, command=on_ui_view_min_change)
@@ -746,6 +746,7 @@ ui_min_scale.pack(fill=tk.X)
 ui_min_scale.bind("<ButtonPress-1>", lambda e: load_undo_snapshot())
 ui_min_scale.bind("<ButtonRelease-1>", lambda e: save_config())
 
+# UI VIEW MAX SLIDER
 max_view_var = tk.StringVar(value=f"UI View Max ({int(UI_VIEW_MAX_PERCENT)}%)")
 ttk.Label(minmax_frame, text="UI View Max %", textvariable=max_view_var).pack(anchor='w')
 ui_max_scale = ttk.Scale(minmax_frame, from_=2, to=100, orient=tk.HORIZONTAL, command=on_ui_view_max_change)
@@ -757,10 +758,19 @@ ui_max_scale.bind("<ButtonRelease-1>", lambda e: save_config())
 label_save_toggle = tk.Label(root, text="Enable Saving", bg=BACKGROUND_COLOR, fg='white')
 label_save_toggle.place(relx=0.01, rely=0.93, anchor='sw')
 
+# SAVE TOGGLE
+save_enabled_var = tk.BooleanVar(value=True)
+
 save_toggle = ttk.Checkbutton(root, text="", variable=save_enabled_var, command=lambda: toggle_saving())
 save_toggle.place(relx=0.01, rely=0.98, anchor='sw')
 
-# Mouse position label
+# Connect mouse events
+canvas.mpl_connect("button_press_event", on_mouse_press)
+canvas.mpl_connect("button_release_event", on_mouse_release)
+canvas.mpl_connect("motion_notify_event", on_mouse_motion)
+canvas.mpl_connect("motion_notify_event", update_mouse_position_label)
+
+# MOUSE POSITION LABELS
 mouse_pos_x = tk.StringVar(value="Intensity: -")
 mouse_pos_y = tk.StringVar(value="Weight:    -")
 
