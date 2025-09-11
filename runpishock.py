@@ -1,16 +1,16 @@
-import random
-import time
-import tkinter as tk
-from tkinter import ttk
-import serial
-from serial.tools import list_ports
 from pythonosc import dispatcher as osc_dispatcher, osc_server, udp_client
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from pishock import SerialAPI
 from pishock.zap.serialapi import SerialAutodetectError, SerialAPI
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from serial.tools import list_ports
 import matplotlib.pyplot as plt
+from pishock import SerialAPI
+from tkinter import ttk
+import tkinter as tk
 import numpy as np
 import threading
+import random
+import serial
+import time
 import json
 import os
 
