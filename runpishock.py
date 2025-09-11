@@ -1,5 +1,4 @@
 from pythonosc import dispatcher as osc_dispatcher, osc_server, udp_client
-from pishock.zap.serialapi import SerialAutodetectError, SerialAPI
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from serial.tools import list_ports
 import matplotlib.pyplot as plt
