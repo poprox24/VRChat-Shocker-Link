@@ -806,6 +806,7 @@ def run_osc_server():
     global server
     disp = osc_dispatcher.Dispatcher()
     disp.map(SHOCK_PARAM, handle_osc_packet)
+    disp.map(SECOND_SHOCK_PARAM, handle_osc_packet)
     server = osc_server.ThreadingOSCUDPServer((VRCHAT_HOST, OSC_LISTEN_PORT), disp)
     print(f"Listening for OSC messages on: {VRCHAT_HOST}:{OSC_LISTEN_PORT}")
     server.serve_forever(poll_interval=0.3)
