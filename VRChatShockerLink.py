@@ -800,17 +800,6 @@ render_curve()
 # Make an initial undo snapshot of the startup state
 load_undo_snapshot()
 
-# ~~~      OSC SERVER THREAD      ~~~
-server = None
-def run_osc_server():
-    global server
-    disp = osc_dispatcher.Dispatcher()
-    disp.map(SHOCK_PARAM, handle_osc_packet)
-    disp.map(SECOND_SHOCK_PARAM, handle_osc_packet)
-    server = osc_server.ThreadingOSCUDPServer((VRCHAT_HOST, OSC_LISTEN_PORT), disp)
-    print(f"Listening for OSC messages on: {VRCHAT_HOST}:{OSC_LISTEN_PORT}")
-    server.serve_forever(poll_interval=0.3)
-
 # Toggle saving config
 def toggle_saving():
     global UI_CONTROL_POINTS, MIN_SHOCK_DURATION, MAX_SHOCK_DURATION, UI_VIEW_MIN_PERCENT, UI_VIEW_MAX_PERCENT
@@ -839,6 +828,19 @@ def toggle_saving():
             except Exception as e:
                 print("Failed to reload config:", e)
     print(f"Saving {'enabled' if save_enabled_var.get() else 'disabled'}")
+
+# ~~~      OSC SERVER THREAD      ~~~
+server = None
+def run_osc_server():
+    global server
+    disp = osc_dispatcher.Dispatcher()
+    if (config.get('SHOCK_PARAMETER')):  # Only run if the user inputs a parameter, otherwise ignore
+        disp.map(SHOCK_PARAM, handle_osc_packet)
+    if (config.get('SECOND_SHOCK_PARAMETER')):
+        disp.map(SECOND_SHOCK_PARAM, handle_osc_packet)
+    server = osc_server.ThreadingOSCUDPServer((VRCHAT_HOST, OSC_LISTEN_PORT), disp)
+    print(f"Listening for OSC messages on: {VRCHAT_HOST}:{OSC_LISTEN_PORT}")
+    server.serve_forever(poll_interval=0.3)
 
 # Shutdown logic
 def shutdown():
