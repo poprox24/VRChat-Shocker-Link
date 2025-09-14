@@ -45,7 +45,7 @@ if __name__ == "__main__":
         for file in zf.filelist:
             if 'config.yml' in file.filename:
                 continue
-            print(f"[Updatecheck] Extracting {file.filename}")
+            # print(f"[Updatecheck] Extracting {file.filename}")
             zf.extract(file, "update")
     
     update_folder = glob.glob(f"./update/{REPO_OWNER}-{REPO_NAME}-*", recursive=True)
