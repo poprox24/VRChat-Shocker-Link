@@ -700,7 +700,7 @@ except Exception:
 
 # Configure styles
 style.configure('.', font=('Segoe UI', 11), padding=6)
-style.configure('TButton', padding=(1, 1), relief='flat')
+style.configure('TButton', padding=(0, 0), relief='flat', font=('Segoe UI', 9))
 style.configure('TLabel', font=('Segoe UI', 11), background=BACKGROUND_COLOR, foreground='white')
 style.configure('TCheckbutton', font=('Segoe UI', 11), background=BACKGROUND_COLOR, foreground='white')
 style.configure('TFrame', background=BACKGROUND_COLOR)
@@ -768,17 +768,21 @@ save_enabled_var = tk.BooleanVar(value=True)
 save_toggle = ttk.Checkbutton(root, text="", variable=save_enabled_var, command=lambda: toggle_saving())
 save_toggle.place(relx=0.01, rely=0.98, anchor='sw')
 
+# COOLDOWN TOGGLE
+cooldown_var = tk.BooleanVar(value=True)
+cooldown_check = ttk.Checkbutton(frame_controls, text="Enable Cooldown", variable=cooldown_var, command=toggle_cooldown_enabled)
+
 # Test shock button
 buttons_frame = ttk.Frame(frame_controls)
-buttons_frame.pack(fill=tk.X, pady=5)  # optional spacing
+buttons_frame.pack(fill=tk.X)
 
 if config.get('SHOCK_PARAMETER'):
-    test_shock = ttk.Button(buttons_frame, text="Test 1", command=lambda: handle_osc_packet(SHOCK_PARAM, 1))
-    test_shock.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 5))
+    test_shock = ttk.Button(buttons_frame, text="Test 1st Param", command=lambda: handle_osc_packet(SHOCK_PARAM, 1))
+    test_shock.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 2))
 
 if config.get('SECOND_SHOCK_PARAMETER'):
-    second_test_shock = ttk.Button(buttons_frame, text="Test 2", command=lambda: handle_osc_packet(SECOND_SHOCK_PARAM, 1))
-    second_test_shock.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(5, 0))
+    second_test_shock = ttk.Button(buttons_frame, text="Test 2nd Param", command=lambda: handle_osc_packet(SECOND_SHOCK_PARAM, 1))
+    second_test_shock.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(2, 0))
 
 
 # Connect mouse events
@@ -796,10 +800,6 @@ mouse_pos_y_label = tk.Label(root, textvariable=mouse_pos_y, font=("Courier New"
 
 mouse_pos_x_label.place(relx=0.01, rely=0.84, anchor='sw')
 mouse_pos_y_label.place(relx=0.01, rely=0.87, anchor='sw')
-
-cooldown_var = tk.BooleanVar(value=True)
-cooldown_check = ttk.Checkbutton(frame_controls, text="Enable Cooldown", variable=cooldown_var, command=toggle_cooldown_enabled)
-cooldown_check.pack(pady=5)
 
 # Extra padding for children in the control frame
 for child in frame_controls.winfo_children():
