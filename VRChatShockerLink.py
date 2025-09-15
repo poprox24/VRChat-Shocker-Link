@@ -281,8 +281,11 @@ def send_chat_message(message_text, clear_after=True):
         # Always allow shock messages to bypass message cooldown
         bypass = "⚡" in message_text
 
+        # If cooldown is active and bypass is false, skip sending
         if not bypass and now - last_send_time < MESSAGE_COOLDOWN:
             return
+        
+        # Update last send time
         last_send_time = now
 
         try:
@@ -696,7 +699,7 @@ except Exception:
 
 # Configure styles
 style.configure('.', font=('Segoe UI', 11), padding=6)
-style.configure('TButton', padding=(10, 6), relief='flat')
+style.configure('TButton', padding=(1, 1), relief='flat')
 style.configure('TLabel', font=('Segoe UI', 11), background=BACKGROUND_COLOR, foreground='white')
 style.configure('TCheckbutton', font=('Segoe UI', 11), background=BACKGROUND_COLOR, foreground='white')
 style.configure('TFrame', background=BACKGROUND_COLOR)
@@ -763,6 +766,19 @@ save_enabled_var = tk.BooleanVar(value=True)
 
 save_toggle = ttk.Checkbutton(root, text="", variable=save_enabled_var, command=lambda: toggle_saving())
 save_toggle.place(relx=0.01, rely=0.98, anchor='sw')
+
+# Test shock button
+buttons_frame = ttk.Frame(frame_controls)
+buttons_frame.pack(fill=tk.X, pady=5)  # optional spacing
+
+if config.get('SHOCK_PARAMETER'):
+    test_shock = ttk.Button(buttons_frame, text="Test 1", command=lambda: handle_osc_packet(SHOCK_PARAM, 1))
+    test_shock.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 5))
+
+if config.get('SECOND_SHOCK_PARAMETER'):
+    second_test_shock = ttk.Button(buttons_frame, text="Test 2", command=lambda: handle_osc_packet(SECOND_SHOCK_PARAM, 1))
+    second_test_shock.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(5, 0))
+
 
 # Connect mouse events
 canvas.mpl_connect("button_press_event", on_mouse_press)
