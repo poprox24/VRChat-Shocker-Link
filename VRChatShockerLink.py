@@ -3,10 +3,12 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from serial.tools import list_ports
 import matplotlib.pyplot as plt
 from pishock import SerialAPI
+from queue import Queue, Empty
 from tkinter import ttk
 import tkinter as tk
 import numpy as np
 import threading
+import logging
 import random
 import serial
 import time
@@ -15,8 +17,21 @@ import yaml
 import os
 
 # Load config from YAML
-config = yaml.safe_load(open("config.yml"))
+config_path = "config.yml"
+logging.basicConfig(
+    level=logging.INFO,
+    format= '%(message)s'
+    )
 
+try:
+    config = yaml.safe_load(open(config_path)) or {}
+except FileNotFoundError:
+    logging.exception("Could not find config.yml file. Using default config")
+    config = {}
+except Exception as e:
+    logging.exception("Could not load config.yml file. Using default config")
+    config = {}
+    
 # --- NETWORK / Serial Config
 USE_PISHOCK = config.get("USE_PISHOCK", False) # Use PiShock if True, else OpenShock
 OPENSHOCK_SHOCKER_ID = config.get("OPENSHOCK_SHOCKER_ID", 41838) # ID for OpenShock shocker
@@ -58,6 +73,7 @@ LABEL_COLOR = config.get("LABEL_COLOR", "#E6EEF6")
 # ~~~      VARIABLES      ~~~
 # Drag/Edit state
 dragging_index = None
+highlight_index = None
 right_click_input_widget = None
 drag_context = {}
 
@@ -85,10 +101,10 @@ def setup_osc_sender():
                     osc_sender = udp_client.SimpleUDPClient(VRCHAT_HOST, OSC_SEND_PORT)
                     break
                 except Exception as e:
-                    print(f"OSC sender setup attempt {attempt+1}/3 failed: {e}. Retrying in 3 seconds...")
+                    logging.warning(f"OSC sender setup attempt {attempt+1}/3 failed: {e}. Retrying in 3 seconds...")
                     time.sleep(3)
         except Exception as e:
-            print(f"Failed to set up OSC sender: {e}. Maximum retries reached.")
+            logging.exception(f"Failed to set up OSC sender: {e}. Maximum retries reached.")
 
 serial_connection = None
 def connect_serial():
@@ -103,20 +119,20 @@ def connect_serial():
             else:
                 ports = [p.device for p in serial.tools.list_ports.comports()]
 
-            print(f"Available ports: {ports}")
+            logging.info(f"Available ports: {ports}")
 
             for attempt in range(3):
                 for port in ports:
                     try:
                         serial_connection = serial.Serial(port, OPENSHOCK_SERIAL_BAUDRATE, timeout=1)
-                        print(f"Connected to serial port {port}")
+                        logging.info(f"Connected to serial port {port}")
                         return serial_connection
                     except Exception as e:
-                        print(f"Failed on {port}: {e}")
-                print(f"Reconnection attempt {attempt+1}/3 failed. Retrying in 3 seconds...")
+                        logging.exception(f"Failed on {port}: {e}")
+                logging.warning(f"Reconnection attempt {attempt+1}/3 failed. Retrying in 3 seconds...")
                 time.sleep(3)
 
-            print("Failed to open serial. Shocks disabled.")
+            logging.error("Failed to open serial. Shocks disabled.")
             serial_connection = None
             return None
     else:
@@ -125,18 +141,37 @@ def connect_serial():
         shockers = info.get("shockers", [])
         first_shocker_id = shockers[0]["id"] if shockers else None
         if first_shocker_id is not None:
-            print(f"Found shocker with ID {first_shocker_id}")
+            logging.info(f"Found shocker with ID {first_shocker_id}")
             shocker = pishock_api.shocker(first_shocker_id)
         else:
-            print("No shockers found.")
+            logging.warning("No shockers found.")
 
-
-# Initial connection attempt
-# Try to connect to serial
-connect_serial()
-
-# Try to set up OSC sender
-setup_osc_sender()
+serial_q = Queue()
+serial_stop = threading.Event()
+def serial_worker():
+    global serial_connection
+    while not serial_stop.is_set():
+        try:
+            cmd = serial_q.get(timeout=0.5)
+        except Empty:
+            continue
+        try:
+            if serial_connection is None or not getattr(serial_connection, "is_open", False):
+                connect_serial()
+            if serial_connection and getattr(serial_connection, "is_open", False):
+                serial_connection.write(cmd)
+                serial_connection.flush()
+        except Exception as e:
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    serial_connection.write(cmd)
+                    serial_connection.flush()
+                    return
+                except Exception as e:
+                    logging.exception(f"Failed to write to serial (Attempt {attempt+1}/{max_retries}): {e}")
+                    time.sleep(0.5)
+            return
 
 # ~~~      LOAD / SAVE CONFIG      ~~~
 # Attempt to load config, default if not found or error
@@ -152,7 +187,7 @@ if os.path.exists(CONFIG_FILE_PATH):
         UI_VIEW_MIN_PERCENT = int(data.get("ui_min_x", data.get("curve_min_x", UI_VIEW_MIN_PERCENT)))
         UI_VIEW_MAX_PERCENT = int(data.get("ui_max_x", data.get("curve_max_x", UI_VIEW_MAX_PERCENT)))
     except Exception as e:
-        print("Config load failed:", e)
+        logging.exception(f"Config load failed: {e}")
 
 # Save new config to file
 def save_config():
@@ -174,7 +209,7 @@ def save_config():
         with open(CONFIG_FILE_PATH, "w") as f:
             json.dump(data, f)
     except Exception as e:
-        print("Failed to save config:", e)
+        logging.exception(f"Failed to save config: {e}")
 
 # ~~~      UNDO / REDO LOGIC      ~~~
 # Save current state to undo history
@@ -220,6 +255,7 @@ def apply_snapshot(snapshot):
         min_view_var.set(f"UI View Min ({int(UI_VIEW_MIN_PERCENT)}%)")
         max_view_var.set(f"UI View Max ({int(UI_VIEW_MAX_PERCENT)}%)")
     except Exception:
+        logging.exception("Unable to apply snapshot.")
         pass
 
 
@@ -303,8 +339,9 @@ def send_chat_message(message_text, clear_after=True):
                 clear_timer.start()
 
         except Exception as e:
-            print("OSC send failed:", e)
-        print(f"Sent message: {message_text}")
+            logging.exception(f"OSC send failed: {e}")
+            return
+        logging.info(f"Sent message: {message_text}")
 
 # Send shock command via serial
 def send_shock(duration_s, intensity_percent):
@@ -313,32 +350,20 @@ def send_shock(duration_s, intensity_percent):
     # Using OpenShock
     if not USE_PISHOCK:
         if serial_connection is None or not getattr(serial_connection, "is_open", True):
-            print("Serial not available. Cannot send shock.\nAttempting to reconnect...")
+            logging.warning("Serial not available. Cannot send shock. Attempting to reconnect...")
             connect_serial()
             return
-        try:
-            # Data for shock
-            payload = {
-                "model": "caixianlin",
-                "id": OPENSHOCK_SHOCKER_ID,
-                "type": "shock",
-                "intensity": int(intensity_percent),
-                "durationMs": int(round(float(duration_s) * 1000))
-            }
-            cmd = "rftransmit " + json.dumps(payload)
-            serial_connection.write((cmd + "\n").encode("utf-8"))
-            serial_connection.flush()
-            return True
-        except Exception as e:
-            max_retries = 3
-            for attempt in range(max_retries):
-                try:
-                    serial_connection.write(cmd.encode())
-                    return True
-                except Exception as e:
-                    print(f"Failed to write to serial (Attempt {attempt+1}/{max_retries}):", e)
-                    time.sleep(0.5)
-            return
+        # Data for shock
+        payload = {
+            "model": "caixianlin",
+            "id": OPENSHOCK_SHOCKER_ID,
+            "type": "shock",
+            "intensity": int(intensity_percent),
+            "durationMs": int(round(float(duration_s) * 1000))
+        }
+        cmd = "rftransmit " + json.dumps(payload)
+        serial_q.put((cmd + "\n").encode('ascii'))
+        return
     else:
         # Using PiShock
         shocker.shock(duration=round(float(duration_s), 1), intensity=int(intensity_percent))
@@ -346,27 +371,35 @@ def send_shock(duration_s, intensity_percent):
 
 # ~~~      OSC MESSAGE HANDLER      ~~~
 # Handle incoming OSC packets
+state_lock = threading.Lock()
 def handle_osc_packet(address, *args):
-    global last_trigger_time, trigger_timestamps
+    global last_trigger_time, trigger_timestamps, state_lock
 
     # Only accept valid shock parameter
     if (address == SHOCK_PARAM or address == SECOND_SHOCK_PARAM) and args:
+        
 
         # If parameter equals 1, continue
         param_value = args[0]
         if param_value == 1:
             now = time.time()
-            trigger_timestamps[:] = [t for t in trigger_timestamps if now - t <= COOLDOWN_WINDOW_S]
-            trigger_count = len(trigger_timestamps)
-            dynamic_cooldown = min(BASE_COOLDOWN_S + COOLDOWN_FACTOR_S * trigger_count, MAX_COOLDOWN_S)
+            with state_lock:
+                trigger_timestamps[:] = [t for t in trigger_timestamps if now - t <= COOLDOWN_WINDOW_S]
+                trigger_count = len(trigger_timestamps)
+                dynamic_cooldown = min(BASE_COOLDOWN_S + COOLDOWN_FACTOR_S * trigger_count, MAX_COOLDOWN_S)
 
-            # Check cooldown
-            if COOLDOWN_ENABLED and now - last_trigger_time <= dynamic_cooldown:
-                send_chat_message(f"On cooldown: {round(last_trigger_time - now + dynamic_cooldown, 1)}s")
+                # Check cooldown
+                if COOLDOWN_ENABLED and now - last_trigger_time <= dynamic_cooldown:
+                    send_chat_message(f"On cooldown: {round(last_trigger_time - now + dynamic_cooldown, 1)}s")
+                    should_proceed = False
+                    return
+                else:
+                    last_trigger_time = now
+                    trigger_timestamps.append(now)
+                    should_proceed = True
+                
+            if not should_proceed:
                 return
-
-            last_trigger_time = now
-            trigger_timestamps.append(now)
 
             # Determine shock intensity and duration
             intensities, weights = compute_curve_distribution()
@@ -407,7 +440,7 @@ def bezier_interpolate(points, steps=100):
 def compute_curve_distribution():
     # Generate a smooth curve from control points
     # Honestly this is math I barely understand, but it works
-    curve = bezier_interpolate(sorted(UI_CONTROL_POINTS, key=lambda p: p[0]), steps=200)
+    curve = bezier_interpolate(sorted(UI_CONTROL_POINTS, key=lambda p: p[0]), steps=100)
     curve = curve[curve[:, 1] > 0]
     xs = np.clip(curve[:, 0].astype(int), 1, 100)
     ys = np.clip(curve[:, 1], 0, 1)
@@ -453,7 +486,7 @@ def on_ui_view_max_change(val):
 
 # Finish text edit from right-click entry
 def finish_text_edit(event=None):
-    global right_click_input_widget
+    global right_click_input_widget, highlight_index
 
     # If no widget, return
     if not right_click_input_widget:
@@ -463,9 +496,11 @@ def finish_text_edit(event=None):
     user_input = right_click_input_widget.get()
     right_click_input_widget.destroy()
     right_click_input_widget = None
+    highlight_index = None
 
     # Validate input
     if not user_input:
+        render_curve()
         return
     
     # Expect format "x,y"
@@ -474,12 +509,12 @@ def finish_text_edit(event=None):
         x_val = float(x_str.strip())
         y_val = float(y_str.strip())
     except Exception:
-        print("Invalid input format")
+        logging.warning("Invalid input format")
         return
     
     # Find nearest point
     x_val = np.clip(x_val, 1, 100)
-    y_val = np.clip(y_val, 0, 1)
+    y_val = np.clip(y_val, 0, 100)
     dists = [abs(p[0] - x_val) for p in UI_CONTROL_POINTS]
     nearest = int(np.argmin(dists))
 
@@ -487,13 +522,13 @@ def finish_text_edit(event=None):
     load_undo_snapshot()
 
     # Update point and re-render
-    UI_CONTROL_POINTS[nearest] = (x_val, y_val)
+    UI_CONTROL_POINTS[nearest] = (x_val, y_val / 100)
     save_config()
     render_curve()
 
 # Mouse press handler
 def on_mouse_press(event):
-    global dragging_index, right_click_input_widget, drag_context
+    global dragging_index, highlight_index, right_click_input_widget, drag_context
 
     # Ignore if not in axes
     if event.inaxes != ax:
@@ -504,15 +539,48 @@ def on_mouse_press(event):
         if right_click_input_widget is not None:
             right_click_input_widget.destroy()
             right_click_input_widget = None
+            
+        click_x = event.xdata
+        click_y = event.ydata
+        if click_x is None or click_y is None:
+            return
+        dists = [abs(point[0] - click_x) for point in UI_CONTROL_POINTS]
+        nearest_index = int(np.argmin(dists))
+        highlight_index = nearest_index
+            
         canvas_widget = canvas.get_tk_widget()
-        entry_x = event.x
-        canvas_height = canvas_widget.winfo_height()
-        entry_y = canvas_height - event.y
+        
+        pointer_x = canvas_widget.winfo_pointerx()
+        pointer_y = canvas_widget.winfo_pointery()
+        
+        local_x = pointer_x - canvas_widget.winfo_rootx()
+        local_y = pointer_y - canvas_widget.winfo_rooty()
+        
         right_click_input_widget = tk.Entry(canvas_widget, width=15)
-        right_click_input_widget.place(x=entry_x, y=entry_y)
+        
+        placeholder_text = "X,Y | 0-100"
+        right_click_input_widget.insert(0, placeholder_text)
+        right_click_input_widget.config(fg="gray")
+        
+        def on_key(event):
+            if right_click_input_widget.get() == placeholder_text:
+                right_click_input_widget.delete(0, tk.END)
+                right_click_input_widget.config(fg="black")
+                
+        def on_finish(event):
+            if not right_click_input_widget.get() == placeholder_text:
+                finish_text_edit
+            else:
+                right_click_input_widget.destroy()
+            
+
+        right_click_input_widget.bind("<Key>", on_key)
+        right_click_input_widget.place(x=local_x, y=local_y)
         right_click_input_widget.focus_set()
-        right_click_input_widget.bind("<Return>", finish_text_edit)
-        right_click_input_widget.bind("<FocusOut>", finish_text_edit)
+        right_click_input_widget.bind("<Return>", on_finish)
+        right_click_input_widget.bind("<FocusOut>", on_finish)
+        
+        render_curve()
         return
 
     # Left-click to drag point
@@ -562,8 +630,9 @@ def on_mouse_release(event):
     save_config()
 
 # Mouse motion handler
+render_job = None
 def on_mouse_motion(event):
-    global dragging_index
+    global dragging_index, render_job
 
     # Ignore if not dragging
     if dragging_index is None or event.inaxes != ax or event.xdata is None:
@@ -607,7 +676,10 @@ def on_mouse_motion(event):
             new_mid = p0 + v_unit * (t * vlen) + perp_unit * perp_mag
 
         UI_CONTROL_POINTS[1] = (float(new_mid[0]), float(new_mid[1]))
-    render_curve()
+        
+    if render_job is not None:
+        root.after_cancel(render_job)
+    render_job = root.after(2, render_curve)
 
 # Render the curve and UI
 def render_curve():
@@ -624,15 +696,20 @@ def render_curve():
 
     # Marker points
     xs, ys = zip(*sorted_pts)
-    ax.scatter(xs, ys, zorder=5, color=MARKER_COLOR, s=TOUCH_MARKER_SIZE, edgecolor='k', linewidth=0.6)
+    ax.scatter(xs, ys, zorder=5, color=MARKER_COLOR, s=TOUCH_MARKER_SIZE, edgecolors='k', marker="o", linewidth=0.6)
 
     # Draw ring around selected point
     try:
         if dragging_index is not None and 0 <= dragging_index < len(sorted_pts):
-            sx, sy = sorted_pts[dragging_index]
-            ax.scatter([sx], [sy], s=TOUCH_MARKER_SIZE * 1.8, facecolors='none',
-                       edgecolors='white', linewidths=1.4, alpha=0.45, zorder=4)
+            sx, sy = UI_CONTROL_POINTS[dragging_index]
+            ax.scatter([sx], [sy], s=TOUCH_MARKER_SIZE * 1.8, facecolors="none",
+                       edgecolors='white', marker="o", linewidths=1.4, alpha=0.45, zorder=4)
+        if highlight_index is not None:
+            sx, sy = UI_CONTROL_POINTS[highlight_index]
+            ax.scatter([sx], [sy], s=TOUCH_MARKER_SIZE * 1.8, facecolors="none",
+                       edgecolors='white', marker="o", linewidths=1.4, alpha=0.45, zorder=4)
     except Exception:
+        logging.exception("Unable to draw ring around selected point. (You can ignore this error)")
         pass
 
     # Draw min/max lines
@@ -684,7 +761,7 @@ def toggle_cooldown_enabled():
     global COOLDOWN_ENABLED
 
     COOLDOWN_ENABLED = not COOLDOWN_ENABLED
-    print(f"Cooldown {'enabled' if COOLDOWN_ENABLED else 'disabled'}")
+    logging.info(f"Cooldown {'enabled' if COOLDOWN_ENABLED else 'disabled'}")
 
 # ~~~      TKINTER UI SETUP      ~~~
 root = tk.Tk()
@@ -696,7 +773,7 @@ style = ttk.Style(root)
 try:
     style.theme_use('clam')
 except Exception:
-    pass
+    logging.exception("Unable to apply theme")
 
 # Configure styles
 style.configure('.', font=('Segoe UI', 11), padding=6)
@@ -806,6 +883,7 @@ for child in frame_controls.winfo_children():
     try:
         child.pack_configure(padx=8, pady=6)
     except Exception:
+        logging.exception("Unable to apply padding. UI sizing might be broken.")
         pass
 
 # Bind Undo/Redo
@@ -841,13 +919,14 @@ def toggle_saving():
                 max_duration_var.set(f"Max Duration ({MAX_SHOCK_DURATION:.1f}s)")
                 ui_min_scale.set(UI_VIEW_MIN_PERCENT)
                 ui_max_scale.set(UI_VIEW_MAX_PERCENT)
-                print("Config reloaded on save enable")
+                logging.info("Config reloaded on save enable")
             except Exception as e:
-                print("Failed to reload config:", e)
-    print(f"Saving {'enabled' if save_enabled_var.get() else 'disabled'}")
+                logging.exception(f"Failed to reload config: {e}")
+    logging.info(f"Saving {'enabled' if save_enabled_var.get() else 'disabled'}")
 
 # ~~~      OSC SERVER THREAD      ~~~
 server = None
+stop_event = threading.Event()
 def run_osc_server():
     global server
     disp = osc_dispatcher.Dispatcher()
@@ -856,36 +935,47 @@ def run_osc_server():
     if (config.get('SECOND_SHOCK_PARAMETER')):
         disp.map(SECOND_SHOCK_PARAM, handle_osc_packet)
     server = osc_server.ThreadingOSCUDPServer((VRCHAT_HOST, OSC_LISTEN_PORT), disp)
-    print(f"Listening for OSC messages on: {VRCHAT_HOST}:{OSC_LISTEN_PORT}")
+    logging.info(f"Listening for OSC messages on: {VRCHAT_HOST}:{OSC_LISTEN_PORT}")
     server.serve_forever(poll_interval=0.3)
+    stop_event.set()
 
 # Shutdown logic
 def shutdown():
     save_config()
     if server:
-        print("Stopping server")
+        logging.info("Stopping server")
         server.shutdown()
         try:
             poke = udp_client.SimpleUDPClient(VRCHAT_HOST, OSC_LISTEN_PORT)
             poke.send_message("/_shutdown", 1)
         except Exception as e:
-            print("Poke failed:", e)
+            logging.exception(f"Poke failed: {e}")
         osc_thread.join(timeout=1)
         server.server_close()
     global serial_connection
     try:
+        serial_stop.set()
+        serial_thread.join(timeout=1)
         if serial_connection and getattr(serial_connection, "is_open", False):
             serial_connection.close()
-            print("Closed serial port")
+            logging.info("Closed serial port")
     except Exception as e:
-        print("Error closing serial:", e)
+        logging.exception(f"Error closing serial: {e}")
     root.destroy()
 
 # Start OSC server thread
 osc_thread = threading.Thread(target=run_osc_server, daemon=True)
-osc_thread.start()
+serial_thread = threading.Thread(target=serial_worker, daemon=True)
+
 root.protocol("WM_DELETE_WINDOW", shutdown)
 
+def start_services():
+    setup_osc_sender()
+    connect_serial()
+    serial_thread.start()
+    osc_thread.start()
+
+start_services()
 # Start Tkinter main loop
 try:
     root.mainloop()
