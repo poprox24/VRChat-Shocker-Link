@@ -121,9 +121,9 @@ def connect_serial():
                 for port in ports:
                     try:
                         ser = serial.Serial(port, OPENSHOCK_SERIAL_BAUDRATE, timeout=1)
-                        ser.write(b"help\n")
-                        resp = ser.read(256)
-                        if b"OPENSHOCK" in resp:
+                        ser.write(b"domain\n")
+                        resp = ser.read(50)
+                        if b"openshock" in resp:
                             ser.flush()
                             logging.info(f"Connected to serial port {port}")
                             serial_connection = ser
