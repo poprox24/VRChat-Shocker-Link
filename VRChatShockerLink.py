@@ -1,15 +1,18 @@
-from pythonosc import dispatcher as osc_dispatcher, osc_server, udp_client
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from zeroconf import ServiceInfo, Zeroconf
 from serial.tools import list_ports
 import matplotlib.pyplot as plt
 from pishock import SerialAPI
 from queue import Queue, Empty
+from vrchat_oscquery.threaded import vrc_osc
+from vrchat_oscquery.common import vrc_client, dict_to_dispatcher
 from tkinter import ttk
 import tkinter as tk
 import numpy as np
 import threading
 import logging
 import random
+import socket
 import serial
 import time
 import json
@@ -36,12 +39,12 @@ except Exception as e:
 USE_PISHOCK = config.get("USE_PISHOCK", False) # Use PiShock if True, else OpenShock
 OPENSHOCK_SHOCKER_ID = config.get("OPENSHOCK_SHOCKER_ID", 41838) # ID for OpenShock shocker
 VRCHAT_HOST = config.get("VRCHAT_HOST", "127.0.0.1")
-OSC_LISTEN_PORT = config.get("OSC_LISTEN_PORT", 9001)
-OSC_SEND_PORT = config.get("OSC_SEND_PORT", 9000)
 OPENSHOCK_SERIAL_BAUDRATE = 115200
 SERIAL_PORT = config.get("serial_port", "")
 SHOCK_PARAM = f"/avatar/parameters/{config.get('SHOCK_PARAMETER', 'Shock')}" # OSC parameter to listen for shock trigger
 SECOND_SHOCK_PARAM = f"/avatar/parameters/{config.get('SECOND_SHOCK_PARAMETER', 'SlapShock') or 'SlapShock'}" # Seccond parameter for stronger shocks, if empty use "SlapShock" to prevent false OSC triggers
+
+client = vrc_client()
 
 # Base config
 BASE_COOLDOWN_S = 2
@@ -91,20 +94,12 @@ if USE_PISHOCK:
     shocker = None
 
 # ~~~      OSC / SERIAL SETUP      ~~~
-osc_sender = None
-def setup_osc_sender():
-    global osc_sender
-    if osc_sender is None:
-        try:
-            for attempt in range(3):
-                try:
-                    osc_sender = udp_client.SimpleUDPClient(VRCHAT_HOST, OSC_SEND_PORT)
-                    break
-                except Exception as e:
-                    logging.warning(f"OSC sender setup attempt {attempt+1}/3 failed: {e}. Retrying in 3 seconds...")
-                    time.sleep(3)
-        except Exception as e:
-            logging.exception(f"Failed to set up OSC sender: {e}. Maximum retries reached.")
+def osc_server():
+    server1 = vrc_osc("Schocker Link First Param", dict_to_dispatcher({f"{SHOCK_PARAM}": handle_osc_packet}))
+    server2 = vrc_osc("Schocker Link Second Param", dict_to_dispatcher({f"{SECOND_SHOCK_PARAM}": handle_osc_packet}))
+    
+    server1.serve_forever()
+    server2.serve_forever()
 
 serial_connection = None
 def connect_serial():
@@ -325,7 +320,7 @@ def send_chat_message(message_text, clear_after=True):
         last_send_time = now
 
         try:
-            osc_sender.send_message("/chatbox/input", [message_text, True, False])
+            client.send_message("/chatbox/input", (message_text, True, False))
 
             # Schedule a clear if a message is sent
             if clear_after:
@@ -418,8 +413,7 @@ def handle_osc_packet(address, *args):
             # Send shock and chat message
             send_shock(duration_s=duration, intensity_percent=intensity)
             send_chat_message(f"⚡ {intensity}% | {duration}s")
-
-
+            
 # ~~~      Bezier Curve and Distribution Logic      ~~~
 # Bezier curve interpolation for rendering curve
 def bezier_interpolate(points, steps=100):
@@ -950,7 +944,7 @@ def shutdown():
             poke.send_message("/_shutdown", 1)
         except Exception as e:
             logging.exception(f"Poke failed: {e}")
-        osc_thread.join(timeout=1)
+        osc_server_thread.join(timeout=1)
         server.server_close()
     global serial_connection
     try:
@@ -964,16 +958,15 @@ def shutdown():
     root.destroy()
 
 # Start OSC server thread
-osc_thread = threading.Thread(target=run_osc_server, daemon=True)
+osc_server_thread = threading.Thread(target=osc_server, daemon=True)
 serial_thread = threading.Thread(target=serial_worker, daemon=True)
 
 root.protocol("WM_DELETE_WINDOW", shutdown)
 
 def start_services():
-    setup_osc_sender()
     connect_serial()
     serial_thread.start()
-    osc_thread.start()
+    osc_server_thread.start()
 
 start_services()
 # Start Tkinter main loop
