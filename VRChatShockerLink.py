@@ -95,11 +95,12 @@ if USE_PISHOCK:
 
 # ~~~      OSC / SERIAL SETUP      ~~~
 def osc_server():
-    server1 = vrc_osc("Schocker Link First Param", dict_to_dispatcher({f"{SHOCK_PARAM}": handle_osc_packet}))
-    server2 = vrc_osc("Schocker Link Second Param", dict_to_dispatcher({f"{SECOND_SHOCK_PARAM}": handle_osc_packet}))
-    
-    server1.serve_forever()
-    server2.serve_forever()
+    if (config.get('SHOCK_PARAMETER')):
+        server1 = vrc_osc("Schocker Link First Param", dict_to_dispatcher({f"{SHOCK_PARAM}": handle_osc_packet}))
+        server1.serve_forever()
+    if (config.get('SECOND_SHOCK_PARAMETER')):
+        server2 = vrc_osc("Schocker Link Second Param", dict_to_dispatcher({f"{SECOND_SHOCK_PARAM}": handle_osc_packet}))
+        server2.serve_forever()
 
 serial_connection = None
 def connect_serial():
@@ -923,13 +924,6 @@ server = None
 stop_event = threading.Event()
 def run_osc_server():
     global server
-    disp = osc_dispatcher.Dispatcher()
-    if (config.get('SHOCK_PARAMETER')):  # Only run if the user inputs a parameter, otherwise ignore
-        disp.map(SHOCK_PARAM, handle_osc_packet)
-    if (config.get('SECOND_SHOCK_PARAMETER')):
-        disp.map(SECOND_SHOCK_PARAM, handle_osc_packet)
-    server = osc_server.ThreadingOSCUDPServer((VRCHAT_HOST, OSC_LISTEN_PORT), disp)
-    logging.info(f"Listening for OSC messages on: {VRCHAT_HOST}:{OSC_LISTEN_PORT}")
     server.serve_forever(poll_interval=0.3)
     stop_event.set()
 
@@ -939,11 +933,6 @@ def shutdown():
     if server:
         logging.info("Stopping server")
         server.shutdown()
-        try:
-            poke = udp_client.SimpleUDPClient(VRCHAT_HOST, OSC_LISTEN_PORT)
-            poke.send_message("/_shutdown", 1)
-        except Exception as e:
-            logging.exception(f"Poke failed: {e}")
         osc_server_thread.join(timeout=1)
         server.server_close()
     global serial_connection
