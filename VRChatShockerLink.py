@@ -120,13 +120,21 @@ def connect_serial():
             for attempt in range(3):
                 for port in ports:
                     try:
-                        serial_connection = serial.Serial(port, OPENSHOCK_SERIAL_BAUDRATE, timeout=1)
-                        logging.info(f"Connected to serial port {port}")
-                        return serial_connection
+                        ser = serial.Serial(port, OPENSHOCK_SERIAL_BAUDRATE, timeout=1)
+                        ser.write(b"help\n")
+                        resp = ser.read(256)
+                        if b"OPENSHOCK" in resp:
+                            ser.flush()
+                            logging.info(f"Connected to serial port {port}")
+                            serial_connection = ser
+                            return ser
+                        else:
+                            ser.close()
                     except Exception as e:
                         logging.exception(f"Failed on {port}: {e}")
-                logging.warning(f"Reconnection attempt {attempt+1}/3 failed. Retrying in 3 seconds...")
-                time.sleep(3)
+                        logging.warning(f"Reconnection attempt {attempt+1}/3 failed. Retrying in 3 seconds...")
+                        time.sleep(3)
+                        return serial_connection
 
             logging.error("Failed to open serial. Shocks disabled.")
             serial_connection = None
