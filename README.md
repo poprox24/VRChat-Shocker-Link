@@ -75,7 +75,8 @@ Make sure to download this program before you continue:
 <!-- ROADMAP -->
 ## Roadmap
 
-- [x] Rewrite with OOP in mind
+- [ ] Use OSC Query instead of normal OSC
+- [ ] Rewrite with OOP in mind
 - [ ] Get shocker ID automatically from OpenShock devices
 - [ ] Rework UI
 
