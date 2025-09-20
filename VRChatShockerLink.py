@@ -95,12 +95,17 @@ if USE_PISHOCK:
 
 # ~~~      OSC / SERIAL SETUP      ~~~
 def osc_server():
+    servers = []
     if (config.get('SHOCK_PARAMETER')):
         server1 = vrc_osc("Schocker Link First Param", dict_to_dispatcher({f"{SHOCK_PARAM}": handle_osc_packet}))
-        server1.serve_forever()
+        servers.append(("1st", server1))
     if (config.get('SECOND_SHOCK_PARAMETER')):
         server2 = vrc_osc("Schocker Link Second Param", dict_to_dispatcher({f"{SECOND_SHOCK_PARAM}": handle_osc_packet}))
-        server2.serve_forever()
+        servers.append(("2nd", server2))
+    
+    for name, srv in servers:
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        logging.info(f"Started OSC server: {name}")
 
 serial_connection = None
 def connect_serial():
