@@ -168,7 +168,7 @@ def serial_worker():
             try:
                 if serial_connection is None or not getattr(serial_connection, "is_open", False):
                     connect_serial()
-                if serial_connection and getattr(serial_connection, "is_open", False):
+                if serial_connection and getattr(serial_connection, "is_open", True):
                     serial_connection.write(cmd)
                     serial_connection.flush()
                     break
@@ -181,7 +181,6 @@ def serial_worker():
                     time.sleep(0.5)
         else:
             print("Failed to send shock after retries.")
-        return
 
 # ~~~      LOAD / SAVE CONFIG      ~~~
 # Attempt to load config, default if not found or error
