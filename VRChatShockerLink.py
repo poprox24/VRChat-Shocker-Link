@@ -113,7 +113,7 @@ def connect_serial():
             if SERIAL_PORT.strip():
                 ports = [SERIAL_PORT]
             else:
-                ports = [p.device for p in serial.tools.list_ports.comports()]
+                ports = [p.device for p in list_ports.comports()]
 
             logging.info(f"Available ports: {ports}")
 
@@ -132,9 +132,8 @@ def connect_serial():
                             ser.close()
                     except Exception as e:
                         logging.exception(f"Failed on {port}: {e}")
-                        logging.warning(f"Reconnection attempt {attempt+1}/3 failed. Retrying in 3 seconds...")
-                        time.sleep(3)
-                        return serial_connection
+                    logging.warning(f"Reconnection attempt {attempt+1}/3 failed. Retrying in 3 seconds...")
+                    time.sleep(3)
 
             logging.error("Failed to open serial. Shocks disabled.")
             serial_connection = None
@@ -159,23 +158,25 @@ def serial_worker():
             cmd = serial_q.get(timeout=0.5)
         except Empty:
             continue
-        try:
-            if serial_connection is None or not getattr(serial_connection, "is_open", False):
-                connect_serial()
-            if serial_connection and getattr(serial_connection, "is_open", False):
-                serial_connection.write(cmd)
-                serial_connection.flush()
-        except Exception as e:
-            max_retries = 3
-            for attempt in range(max_retries):
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                if serial_connection is None or not getattr(serial_connection, "is_open", False):
+                    connect_serial()
+                if serial_connection and getattr(serial_connection, "is_open", False):
+                    serial_connection.write(cmd)
+                    serial_connection.flush()
+                    break
+            except Exception as e:
                 try:
                     serial_connection.write(cmd)
                     serial_connection.flush()
-                    return
                 except Exception as e:
                     logging.exception(f"Failed to write to serial (Attempt {attempt+1}/{max_retries}): {e}")
                     time.sleep(0.5)
-            return
+        else:
+            print("Failed to send shock after retries.")
+        return
 
 # ~~~      LOAD / SAVE CONFIG      ~~~
 # Attempt to load config, default if not found or error
@@ -353,7 +354,7 @@ def send_shock(duration_s, intensity_percent):
 
     # Using OpenShock
     if not USE_PISHOCK:
-        if serial_connection is None or not getattr(serial_connection, "is_open", True):
+        if serial_connection is None or not getattr(serial_connection, "is_open", False):
             logging.warning("Serial not available. Cannot send shock. Attempting to reconnect...")
             connect_serial()
             return
@@ -572,7 +573,7 @@ def on_mouse_press(event):
                 
         def on_finish(event):
             if not right_click_input_widget.get() == placeholder_text:
-                finish_text_edit
+                finish_text_edit()
             else:
                 right_click_input_widget.destroy()
             
@@ -927,22 +928,11 @@ def toggle_saving():
                 logging.exception(f"Failed to reload config: {e}")
     logging.info(f"Saving {'enabled' if save_enabled_var.get() else 'disabled'}")
 
-# ~~~      OSC SERVER THREAD      ~~~
-server = None
-stop_event = threading.Event()
-def run_osc_server():
-    global server
-    server.serve_forever(poll_interval=0.3)
-    stop_event.set()
-
 # Shutdown logic
 def shutdown():
     save_config()
-    if server:
-        logging.info("Stopping server")
-        server.shutdown()
-        osc_server_thread.join(timeout=1)
-        server.server_close()
+    logging.info("Stopping server")
+    osc_server_thread.join(timeout=1)
     global serial_connection
     try:
         serial_stop.set()
