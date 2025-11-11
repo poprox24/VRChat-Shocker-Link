@@ -4,8 +4,8 @@ from serial.tools import list_ports
 import matplotlib.pyplot as plt
 from pishock import SerialAPI
 from queue import Queue, Empty
-from vrchat_oscquery.threaded import vrc_osc
-from vrchat_oscquery.common import vrc_client, dict_to_dispatcher
+from vrchat_oscquery.vrchat_oscquery.threaded import vrc_osc
+from vrchat_oscquery.vrchat_oscquery.common import vrc_client, dict_to_dispatcher
 from tkinter import ttk
 import tkinter as tk
 import numpy as np
