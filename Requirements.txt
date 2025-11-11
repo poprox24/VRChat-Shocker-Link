@@ -5,5 +5,4 @@ numpy
 requests
 pyyaml
 zeroconf
-vrchat_oscquery @ git+https://github.com/theepicsnail/vrchat_oscquery@main
 python-osc
