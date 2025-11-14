@@ -11,7 +11,7 @@
 <br />
 <div align="center">
   <a href="https://github.com/poprox24/VRChat-Shocker-Link">
-    <img width="803" height="537" alt="preview" src="https://github.com/user-attachments/assets/e6d6c89f-0010-4fa9-8b07-d78f1263211b" />
+    <img width="754" height="555" alt="image" src="https://github.com/user-attachments/assets/e5089b36-c427-4471-8a55-e2bf019e9de9" />
   </a>
 
 <h3 align="center">VRChat Shocker Link</h3>
@@ -71,6 +71,14 @@ Make sure to download this program before you continue:
     - If using an OpenShock and the shocker doesn't react, change the **OPENSHOCK_SHOCKER_ID** in **config.yml** to the one you set on the website
 
 <br />
+
+### Usage
+
+1. Most stuff is self explanatory
+2. You can right click to manually input a number in the curve
+3. Temporary mode disables changes and will return to last saved state once it is disabled again
+4. Presets:
+- Click to load, right click to default
 
 <!-- ROADMAP -->
 ## Roadmap
