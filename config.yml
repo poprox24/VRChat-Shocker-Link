@@ -15,6 +15,8 @@ BACKGROUND_COLOR: "#202630" # Background color of the rest of the window
 CURVE_LINE_COLOR: "#00C2FF" # Color of the curve line
 MARKER_COLOR: "#D88A91" # Color of the points in the curve
 LABEL_COLOR: "#E6EEF6" # Color of the text labels
+PRESET_NORMAL_BG: "#202630" # Normal preset color
+PRESET_DEFAULT_BG: "#2E8A57" # Color of the preset when defaulted
 
 # Vrchat Config (usually don't need to change)
 VRCHAT_HOST: "127.0.0.1"

@@ -72,6 +72,8 @@ BACKGROUND_COLOR = config.get("BACKGROUND_COLOR", "#202630")
 CURVE_LINE_COLOR = config.get("CURVE_LINE_COLOR", "#00C2FF")
 MARKER_COLOR = config.get("MARKER_COLOR", "#D88A91")
 LABEL_COLOR = config.get("LABEL_COLOR", "#E6EEF6")
+PRESET_NORMAL_BG = config.get("PRESET_NORMAL_BG", "#202630")
+PRESET_DEFAULT_BG = config.get("PRESET_DEFAULT_BG", "#2E8A57")
 
 # ~~~      VARIABLES      ~~~
 # Drag/Edit state
@@ -92,6 +94,13 @@ last_trigger_time = 0
 if USE_PISHOCK:
     pishock_api = SerialAPI(port = SERIAL_PORT or None) if USE_PISHOCK else None
     shocker = None
+    
+# Presets
+PRESET_COUNT = 3
+presets = [None] * PRESET_COUNT
+default_preset_index = None
+preset_buttons = []
+preset_save_buttons = []
 
 # ~~~      OSC / SERIAL SETUP      ~~~
 def osc_server():
@@ -181,6 +190,88 @@ def serial_worker():
                     time.sleep(0.5)
         else:
             print("Failed to send shock after retries.")
+            
+# Apply a snapshot
+def apply_snapshot(snapshot):
+    global MIN_SHOCK_DURATION, MAX_SHOCK_DURATION, UI_VIEW_MIN_PERCENT, UI_VIEW_MAX_PERCENT
+    
+    UI_CONTROL_POINTS.clear()
+    UI_CONTROL_POINTS.extend(snapshot["curve_points"])
+    MIN_SHOCK_DURATION = snapshot["min_duration"]
+    MAX_SHOCK_DURATION = snapshot["max_duration"]
+    UI_VIEW_MIN_PERCENT = snapshot["ui_min_x"]
+    UI_VIEW_MAX_PERCENT = snapshot["ui_max_x"]
+
+    # Update UI elements
+    try:
+        try:
+            min_duration_scale.set(MIN_SHOCK_DURATION)
+            max_duration_scale.set(MAX_SHOCK_DURATION)
+            min_duration_var.set(f"Min Duration ({MIN_SHOCK_DURATION:.1f}s)")
+            max_duration_var.set(f"Max Duration ({MAX_SHOCK_DURATION:.1f}s)")
+            ui_min_scale.set(UI_VIEW_MIN_PERCENT)
+            ui_max_scale.set(UI_VIEW_MAX_PERCENT)
+            min_view_var.set(f"UI View Min ({int(UI_VIEW_MIN_PERCENT)}%)")
+            max_view_var.set(f"UI View Max ({int(UI_VIEW_MAX_PERCENT)}%)")
+        except NameError:
+            # UI not built yet, ignore: values will sync once widgets exist
+            pass
+    except Exception:
+        logging.exception("Unable to apply snapshot.")
+        pass
+    
+def make_snapshot():
+    return {
+        "curve_points": UI_CONTROL_POINTS.copy(),
+        "min_duration": MIN_SHOCK_DURATION,
+        "max_duration": MAX_SHOCK_DURATION,
+        "ui_min_x": UI_VIEW_MIN_PERCENT,
+        "ui_max_x": UI_VIEW_MAX_PERCENT,
+    }
+
+def save_preset(index):
+    global presets
+    if not (0 <= index < PRESET_COUNT):
+        return
+    presets[index] = make_snapshot()
+    save_config()
+    update_preset_buttons_appearance()
+    logging.info(f"Saved preset {index+1}")
+
+def load_preset(index):
+    if not (0 <= index < PRESET_COUNT):
+        return
+    p = presets[index]
+    if not p:
+        logging.info(f"No preset saved at slot {index+1}")
+        return
+    load_undo_snapshot()
+    apply_snapshot(p)
+    render_curve()
+    logging.info(f"Loaded preset {index+1}")
+
+def set_default_preset(index):
+    global default_preset_index
+    if not (0 <= index < PRESET_COUNT):
+        return
+    default_preset_index = index
+    save_config()
+    update_preset_buttons_appearance()
+    logging.info(f"Set preset {index+1} as default")
+
+def update_preset_buttons_appearance():
+    try:
+        for i, btn in enumerate(preset_buttons):
+            is_default = (i == default_preset_index)
+            has_data = presets[i] is not None
+            bg = PRESET_DEFAULT_BG if is_default else (PRESET_NORMAL_BG if has_data else "#3a3f46")
+            fg = "white"
+            btn.config(bg=bg, fg=fg)
+            save_btn = preset_save_buttons[i]
+            save_btn.config(state=tk.NORMAL)
+    except Exception:
+        pass
+
 
 # ~~~      LOAD / SAVE CONFIG      ~~~
 # Attempt to load config, default if not found or error
@@ -195,15 +286,36 @@ if os.path.exists(CONFIG_FILE_PATH):
         MAX_SHOCK_DURATION = float(data.get("max_duration", MAX_SHOCK_DURATION))
         UI_VIEW_MIN_PERCENT = int(data.get("ui_min_x", data.get("curve_min_x", UI_VIEW_MIN_PERCENT)))
         UI_VIEW_MAX_PERCENT = int(data.get("ui_max_x", data.get("curve_max_x", UI_VIEW_MAX_PERCENT)))
+
+        # LOad presets
+        raw_presets = data.get("presets", [])
+        if isinstance(raw_presets, list):
+            raw_presets = (raw_presets + [None] * PRESET_COUNT)[:PRESET_COUNT]
+        else:
+            raw_presets = [None] * PRESET_COUNT
+        # Ensure each preset has the expected keys
+        for i in range(PRESET_COUNT):
+            p = raw_presets[i]
+            if isinstance(p, dict):
+                presets[i] = p
+            else:
+                presets[i] = None
+
+        default_idx = data.get("default_preset", None)
+        if isinstance(default_idx, int) and 0 <= default_idx < PRESET_COUNT and presets[default_idx] is not None:
+            default_preset_index = default_idx
+            # Apply snapshot
+            apply_snapshot(presets[default_preset_index])
     except Exception as e:
         logging.exception(f"Config load failed: {e}")
+
 
 # Save new config to file
 def save_config():
     # Do not save if disabled
     if not save_enabled_var.get():
         return
-    
+
     # Prepare data
     data = {
         "curve_points": [(round(x, 2), round(y, 2)) for x, y in UI_CONTROL_POINTS],
@@ -211,14 +323,17 @@ def save_config():
         "max_duration": round(MAX_SHOCK_DURATION, 1),
         "ui_min_x": UI_VIEW_MIN_PERCENT,
         "ui_max_x": UI_VIEW_MAX_PERCENT,
+        "presets": presets,
+        "default_preset": default_preset_index
     }
 
     # Write to file
     try:
         with open(CONFIG_FILE_PATH, "w") as f:
-            json.dump(data, f)
+            json.dump(data, f, indent=2)
     except Exception as e:
         logging.exception(f"Failed to save config: {e}")
+
 
 # ~~~      UNDO / REDO LOGIC      ~~~
 # Save current state to undo history
@@ -241,32 +356,6 @@ def load_undo_snapshot():
 
     # Clear redo history
     redo_history.clear()
-
-# Apply a snapshot
-def apply_snapshot(snapshot):
-    global MIN_SHOCK_DURATION, MAX_SHOCK_DURATION, UI_VIEW_MIN_PERCENT, UI_VIEW_MAX_PERCENT
-    
-    UI_CONTROL_POINTS.clear()
-    UI_CONTROL_POINTS.extend(snapshot["curve_points"])
-    MIN_SHOCK_DURATION = snapshot["min_duration"]
-    MAX_SHOCK_DURATION = snapshot["max_duration"]
-    UI_VIEW_MIN_PERCENT = snapshot["ui_min_x"]
-    UI_VIEW_MAX_PERCENT = snapshot["ui_max_x"]
-
-    # Update UI elements
-    try:
-        min_duration_scale.set(MIN_SHOCK_DURATION)
-        max_duration_scale.set(MAX_SHOCK_DURATION)
-        min_duration_var.set(f"Min Duration ({MIN_SHOCK_DURATION:.1f}s)")
-        max_duration_var.set(f"Max Duration ({MAX_SHOCK_DURATION:.1f}s)")
-        ui_min_scale.set(UI_VIEW_MIN_PERCENT)
-        ui_max_scale.set(UI_VIEW_MAX_PERCENT)
-        min_view_var.set(f"UI View Min ({int(UI_VIEW_MIN_PERCENT)}%)")
-        max_view_var.set(f"UI View Max ({int(UI_VIEW_MAX_PERCENT)}%)")
-    except Exception:
-        logging.exception("Unable to apply snapshot.")
-        pass
-
 
 # Undo action
 def undo_action(event=None):
@@ -868,6 +957,25 @@ if config.get('SHOCK_PARAMETER'):
 if config.get('SECOND_SHOCK_PARAMETER'):
     second_test_shock = ttk.Button(buttons_frame, text="Test 2nd Param", command=lambda: handle_osc_packet(SECOND_SHOCK_PARAM, 1))
     second_test_shock.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(2, 0))
+
+# --- Presets UI (3 slots) ---
+preset_frame = ttk.Frame(frame_controls)
+preset_frame.pack(fill=tk.X, pady=(8, 4))
+
+for i in range(PRESET_COUNT):
+    btn = tk.Button(preset_frame, text=f"Preset {i+1}", width=10,
+                    command=lambda i=i: load_preset(i))
+    btn.grid(row=i, column=0, sticky='w', padx=(0,4), pady=2)
+
+    btn.bind("<Button-3>", lambda e, i=i: set_default_preset(i))
+    preset_buttons.append(btn)
+
+    sbtn = tk.Button(preset_frame, text="💾", width=3,
+                     command=lambda i=i: save_preset(i))
+    sbtn.grid(row=i, column=1, sticky='w', padx=(2,0))
+    preset_save_buttons.append(sbtn)
+
+update_preset_buttons_appearance()
 
 
 # Connect mouse events
