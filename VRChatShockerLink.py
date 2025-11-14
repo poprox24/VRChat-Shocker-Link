@@ -313,7 +313,7 @@ if os.path.exists(CONFIG_FILE_PATH):
 # Save new config to file
 def save_config():
     # Do not save if disabled
-    if not temporary_mode_disabled.get():
+    if temporary_mode_disabled.get():
         return
 
     # Prepare data
@@ -1011,7 +1011,7 @@ render_curve()
 # Make an initial undo snapshot of the startup state
 load_undo_snapshot()
 
-# Toggle saving config
+# Toggle temporary config
 def toggle_temporary_mode():
     global UI_CONTROL_POINTS, MIN_SHOCK_DURATION, MAX_SHOCK_DURATION, UI_VIEW_MIN_PERCENT, UI_VIEW_MAX_PERCENT
 
