@@ -72,6 +72,14 @@ Make sure to download this program before you continue:
 
 <br />
 
+### Usage
+
+1. Most stuff is self explanatory
+2. You can right click to manually input a number in the curve
+3. Temporary mode disables changes and will return to last saved state once it is disabled again
+4. Presets:
+- Click to load, right click to default
+
 <!-- ROADMAP -->
 ## Roadmap
 
