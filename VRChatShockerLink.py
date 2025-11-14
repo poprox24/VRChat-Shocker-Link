@@ -313,7 +313,7 @@ if os.path.exists(CONFIG_FILE_PATH):
 # Save new config to file
 def save_config():
     # Do not save if disabled
-    if not save_enabled_var.get():
+    if not temporary_mode_disabled.get():
         return
 
     # Prepare data
@@ -933,14 +933,14 @@ ui_max_scale.pack(fill=tk.X)
 ui_max_scale.bind("<ButtonPress-1>", lambda e: load_undo_snapshot())
 ui_max_scale.bind("<ButtonRelease-1>", lambda e: save_config())
 
-label_save_toggle = tk.Label(root, text="Enable Saving", bg=BACKGROUND_COLOR, fg='white')
-label_save_toggle.place(relx=0.01, rely=0.93, anchor='sw')
+label_temporary_mode = tk.Label(root, text="Temporary Mode", bg=BACKGROUND_COLOR, fg='white')
+label_temporary_mode.place(relx=0.01, rely=0.93, anchor='sw')
 
-# SAVE TOGGLE
-save_enabled_var = tk.BooleanVar(value=True)
+# TEMPORARY TOGGLE
+temporary_mode_disabled = tk.BooleanVar(value=False)
 
-save_toggle = ttk.Checkbutton(root, text="", variable=save_enabled_var, command=lambda: toggle_saving())
-save_toggle.place(relx=0.01, rely=0.98, anchor='sw')
+temporary_toggle = ttk.Checkbutton(root, text="", variable=temporary_mode_disabled, command=lambda: toggle_temporary_mode())
+temporary_toggle.place(relx=0.01, rely=0.98, anchor='sw')
 
 # COOLDOWN TOGGLE
 cooldown_var = tk.BooleanVar(value=True)
@@ -1012,11 +1012,11 @@ render_curve()
 load_undo_snapshot()
 
 # Toggle saving config
-def toggle_saving():
+def toggle_temporary_mode():
     global UI_CONTROL_POINTS, MIN_SHOCK_DURATION, MAX_SHOCK_DURATION, UI_VIEW_MIN_PERCENT, UI_VIEW_MAX_PERCENT
 
     # If enabling, reload config from file to return to last saved state
-    if save_enabled_var.get():
+    if not temporary_mode_disabled.get():
         if os.path.exists(CONFIG_FILE_PATH):
             try:
                 with open(CONFIG_FILE_PATH, "r") as f:
@@ -1035,10 +1035,10 @@ def toggle_saving():
                 max_duration_var.set(f"Max Duration ({MAX_SHOCK_DURATION:.1f}s)")
                 ui_min_scale.set(UI_VIEW_MIN_PERCENT)
                 ui_max_scale.set(UI_VIEW_MAX_PERCENT)
-                logging.info("Config reloaded on save enable")
+                logging.info("Config reloaded on temporary disable")
             except Exception as e:
                 logging.exception(f"Failed to reload config: {e}")
-    logging.info(f"Saving {'enabled' if save_enabled_var.get() else 'disabled'}")
+    logging.info(f"Temporary mode {'enabled' if temporary_mode_disabled.get() else 'disabled'}")
 
 # Shutdown logic
 def shutdown():
