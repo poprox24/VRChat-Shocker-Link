@@ -1,9 +1,18 @@
 # --- NETWORK / Serial Config
 SHOCK_PARAMETER: "Shock" # Input the parameter name you want to use for the shock (for example for touches)
-SECOND_SHOCK_PARAMETER: "" # Optional second parameter for stronger shocks, takes only the second half of the curve into account (for example for slaps)
+SECOND_SHOCK_PARAMETER: "SlapShock" # Optional second parameter for stronger shocks, takes only the second half of the curve into account (for example for slaps)
 USE_PISHOCK: True # Set to True if using PiShock, False for OpenShock
 OPENSHOCK_SHOCKER_ID: 41838 # Default openshock ID, change if needed
 SERIAL_PORT: "" # Leave blank to auto-detect
+
+# Cooldown settings
+# Math explanation:
+# --- Base_cooldown + Cooldown_factor * Amount of boops in Cooldown_window = Cooldown (s) ---
+BASE_COOLDOWN_S: 2 # Default cooldown (in seconds)
+MAX_COOLDOWN_S: 6 # Maximum cooldown (in seconds)
+COOLDOWN_FACTOR_S: 0.4 # How much cooldown to add per each shock within the window
+COOLDOWN_WINDOW_S: 30 # How big is the window for the factor (in seconds), will count all boops in this timeframe
+COOLDOWN_ENABLED: True # Changes default state of cooldown
 
 # Style config
 TOUCH_SELECT_THRESHOLD: 8 # Touch treshold of the points in the curve
@@ -15,8 +24,6 @@ BACKGROUND_COLOR: "#202630" # Background color of the rest of the window
 CURVE_LINE_COLOR: "#00C2FF" # Color of the curve line
 MARKER_COLOR: "#D88A91" # Color of the points in the curve
 LABEL_COLOR: "#E6EEF6" # Color of the text labels
-PRESET_NORMAL_BG: "#202630" # Normal preset color
-PRESET_DEFAULT_BG: "#2E8A57" # Color of the preset when defaulted
 
 # Vrchat Config (usually don't need to change)
 VRCHAT_HOST: "127.0.0.1"
