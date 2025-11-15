@@ -70,15 +70,17 @@ Make sure to download this program before you continue:
 6. Run **RunShockerLink.bat**
     - If using an OpenShock and the shocker doesn't react, change the **OPENSHOCK_SHOCKER_ID** in **config.yml** to the one you set on the website
 
-<br />
-
 ### Usage
 
 1. Most stuff is self explanatory
 2. You can right click to manually input a number in the curve
 3. Temporary mode disables changes and will return to last saved state once it is disabled again
 4. Presets:
-- Click to load, right click to default
+- Left click to load
+- Right click to rename
+- Middle click to default
+
+<br />
 
 <!-- ROADMAP -->
 ## Roadmap
