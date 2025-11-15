@@ -8,6 +8,7 @@ from vrchat_oscquery.vrchat_oscquery.threaded import vrc_osc
 from vrchat_oscquery.vrchat_oscquery.common import vrc_client, dict_to_dispatcher
 from tkinter import ttk
 import tkinter as tk
+from tkinter import simpledialog
 import numpy as np
 import threading
 import logging
@@ -98,6 +99,7 @@ if USE_PISHOCK:
 # Presets
 PRESET_COUNT = 3
 presets = [None] * PRESET_COUNT
+preset_names = [f"Preset {i+1}" for i in range(PRESET_COUNT)]
 default_preset_index = None
 preset_buttons = []
 preset_save_buttons = []
@@ -266,7 +268,7 @@ def update_preset_buttons_appearance():
             has_data = presets[i] is not None
             bg = PRESET_DEFAULT_BG if is_default else (PRESET_NORMAL_BG if has_data else "#3a3f46")
             fg = "white"
-            btn.config(bg=bg, fg=fg)
+            btn.config(text=preset_names[i], bg=bg, fg=fg)
             save_btn = preset_save_buttons[i]
             save_btn.config(state=tk.NORMAL)
     except Exception:
@@ -287,7 +289,7 @@ if os.path.exists(CONFIG_FILE_PATH):
         UI_VIEW_MIN_PERCENT = int(data.get("ui_min_x", data.get("curve_min_x", UI_VIEW_MIN_PERCENT)))
         UI_VIEW_MAX_PERCENT = int(data.get("ui_max_x", data.get("curve_max_x", UI_VIEW_MAX_PERCENT)))
 
-        # LOad presets
+        # Load presets
         raw_presets = data.get("presets", [])
         if isinstance(raw_presets, list):
             raw_presets = (raw_presets + [None] * PRESET_COUNT)[:PRESET_COUNT]
@@ -300,6 +302,11 @@ if os.path.exists(CONFIG_FILE_PATH):
                 presets[i] = p
             else:
                 presets[i] = None
+
+        # Load preset names if present
+        raw_names = data.get("preset_names", None)
+        if isinstance(raw_names, list) and len(raw_names) >= PRESET_COUNT:
+            preset_names = raw_names[:PRESET_COUNT]
 
         default_idx = data.get("default_preset", None)
         if isinstance(default_idx, int) and 0 <= default_idx < PRESET_COUNT and presets[default_idx] is not None:
@@ -324,7 +331,8 @@ def save_config():
         "ui_min_x": UI_VIEW_MIN_PERCENT,
         "ui_max_x": UI_VIEW_MAX_PERCENT,
         "presets": presets,
-        "default_preset": default_preset_index
+        "default_preset": default_preset_index,
+        "preset_names": preset_names
     }
 
     # Write to file
@@ -860,6 +868,83 @@ def toggle_cooldown_enabled():
     COOLDOWN_ENABLED = not COOLDOWN_ENABLED
     logging.info(f"Cooldown {'enabled' if COOLDOWN_ENABLED else 'disabled'}")
 
+# --- Preset Logic ---
+preset_rename_widget = None
+preset_rename_index = None
+
+def start_preset_rename(event, index):
+    """Create an inline Entry at the mouse pointer to rename preset `index`."""
+    global preset_rename_widget, preset_rename_index
+    # Destroy existing if present
+    if preset_rename_widget is not None:
+        try:
+            preset_rename_widget.destroy()
+        except Exception:
+            pass
+        preset_rename_widget = None
+        preset_rename_index = None
+
+    # Parent the entry to the button's parent so coordinates match
+    btn = preset_buttons[index] if index < len(preset_buttons) else None
+    parent = btn.master if btn else preset_frame
+
+    pointer_x = parent.winfo_pointerx()
+    pointer_y = parent.winfo_pointery()
+    local_x = pointer_x - parent.winfo_rootx()
+    local_y = pointer_y - parent.winfo_rooty()
+
+    preset_rename_widget = tk.Entry(parent, width=18)
+    preset_rename_widget.insert(0, preset_names[index])
+    preset_rename_widget.select_range(0, tk.END)
+    preset_rename_widget.place(x=local_x, y=local_y)
+    preset_rename_widget.focus_set()
+    preset_rename_index = index
+
+    # Handlers
+    def _finish(event=None):
+        finish_preset_rename()
+    def _cancel(event=None):
+        cancel_preset_rename()
+
+    preset_rename_widget.bind("<Return>", _finish)
+    preset_rename_widget.bind("<FocusOut>", _finish)
+    preset_rename_widget.bind("<Escape>", _cancel)
+
+def finish_preset_rename():
+    """Read entry, apply name, save, destroy entry."""
+    global preset_rename_widget, preset_rename_index
+    if preset_rename_widget is None or preset_rename_index is None:
+        return
+    new_name = preset_rename_widget.get().strip()
+    try:
+        preset_rename_widget.destroy()
+    except Exception:
+        pass
+    preset_rename_widget = None
+    idx = preset_rename_index
+    preset_rename_index = None
+
+    if not new_name:
+        return
+    preset_names[idx] = new_name
+    try:
+        preset_buttons[idx].config(text=new_name)
+    except Exception:
+        pass
+    save_config()
+    update_preset_buttons_appearance()
+
+def cancel_preset_rename():
+    global preset_rename_widget, preset_rename_index
+    if preset_rename_widget is not None:
+        try:
+            preset_rename_widget.destroy()
+        except Exception:
+            pass
+    preset_rename_widget = None
+    preset_rename_index = None
+
+
 # ~~~      TKINTER UI SETUP      ~~~
 root = tk.Tk()
 root.title("Shock Control GUI")
@@ -963,17 +1048,21 @@ preset_frame = ttk.Frame(frame_controls)
 preset_frame.pack(fill=tk.X, pady=(8, 4))
 
 for i in range(PRESET_COUNT):
-    btn = tk.Button(preset_frame, text=f"Preset {i+1}", width=10,
+    btn = tk.Button(preset_frame, text=preset_names[i], width=10,
                     command=lambda i=i: load_preset(i))
     btn.grid(row=i, column=0, sticky='w', padx=(0,4), pady=2)
 
-    btn.bind("<Button-3>", lambda e, i=i: set_default_preset(i))
+    # Right-click -> inline rename (Entry overlay). Middle-click -> set default.
+    btn.bind("<Button-3>", lambda e, i=i: start_preset_rename(e, i))
+    btn.bind("<Button-2>", lambda e, i=i: set_default_preset(i))
+
     preset_buttons.append(btn)
 
     sbtn = tk.Button(preset_frame, text="💾", width=3,
                      command=lambda i=i: save_preset(i))
     sbtn.grid(row=i, column=1, sticky='w', padx=(2,0))
     preset_save_buttons.append(sbtn)
+
 
 update_preset_buttons_appearance()
 
