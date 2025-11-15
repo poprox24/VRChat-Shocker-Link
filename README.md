@@ -78,7 +78,9 @@ Make sure to download this program before you continue:
 2. You can right click to manually input a number in the curve
 3. Temporary mode disables changes and will return to last saved state once it is disabled again
 4. Presets:
-- Click to load, right click to default
+- Left click to load
+- Right click to rename
+- Middle click to default
 
 <!-- ROADMAP -->
 ## Roadmap
