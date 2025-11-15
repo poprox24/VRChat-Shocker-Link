@@ -5,6 +5,11 @@ REPO_OWNER = "poprox24"
 REPO_NAME = "VRChat-Shocker-Link"
 REPO_BRANCH = "master"
 
+RED = "\033[31m"
+YELLOW = "\033[33m"
+CYAN = "\033[36m"
+RESET = "\033[0m"
+
 def fetch_last_commit_info():
     # /repos/:owner/:repo/commits/master
     r = requests.get(f"{API_BASE}/repos/{REPO_OWNER}/{REPO_NAME}/commits/{REPO_BRANCH}")
@@ -34,11 +39,11 @@ if __name__ == "__main__":
     
     last_info = load_json()
     if last_info['hash'] == hash:
-        print("[Updatecheck] Scripts up to date!")
+        print(f"[Updatecheck] Scripts up to date!")
         exit(0)
     
-    print(f"[Updatecheck] Updating to version {hash}!")
-    print(f"[Updatecheck] Commit: {message} - {author}")
+    print(f"{CYAN}[Updatecheck] Updating to version {hash}!{RESET}")
+    print(f"{YELLOW}[Updatecheck] Commit: {message} - {author}{RESET}")
 
     update_zip = fetch_latest_repo_zip()
     with zipfile.ZipFile(io.BytesIO(update_zip), 'r') as zf:
@@ -50,7 +55,7 @@ if __name__ == "__main__":
     
     update_folder = glob.glob(f"./update/{REPO_OWNER}-{REPO_NAME}-*", recursive=True)
     if len(update_folder) < 0:
-        print("[Updatecheck] Can't find extracted zip?")
+        print(f"{RED}[Updatecheck] Can't find extracted zip?{RESET}")
         exit(1)
 
     update_folder = update_folder[0]
