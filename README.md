@@ -70,8 +70,6 @@ Make sure to download this program before you continue:
 6. Run **RunShockerLink.bat**
     - If using an OpenShock and the shocker doesn't react, change the **OPENSHOCK_SHOCKER_ID** in **config.yml** to the one you set on the website
 
-<br />
-
 ### Usage
 
 1. Most stuff is self explanatory
@@ -81,6 +79,8 @@ Make sure to download this program before you continue:
 - Left click to load
 - Right click to rename
 - Middle click to default
+
+<br />
 
 <!-- ROADMAP -->
 ## Roadmap
