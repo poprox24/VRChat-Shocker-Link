@@ -93,7 +93,8 @@ last_trigger_time = 0
 
 # Pishock Vars
 if USE_PISHOCK:
-    pishock_api = SerialAPI(port = SERIAL_PORT or None) if USE_PISHOCK else None
+    pishock_api = SerialAPI(port = SERIAL_PORT or None)
+    PISHOCK_SHOCKER_ID = config.get("PISHOCK_SHOCKER_ID", None)
     shocker = None
     
 # Presets
@@ -159,11 +160,15 @@ def connect_serial():
         info = pishock_api.info()
         shockers = info.get("shockers", [])
         first_shocker_id = shockers[0]["id"] if shockers else None
-        if first_shocker_id is not None:
-            logging.info(f"Found shocker with ID {first_shocker_id}")
-            shocker = pishock_api.shocker(first_shocker_id)
+        if not PISHOCK_SHOCKER_ID:
+            if first_shocker_id is not None:
+                logging.info(f"Found shocker with ID {first_shocker_id}")
+                shocker = pishock_api.shocker(first_shocker_id)
+            else:
+                logging.warning("No shockers found.")
         else:
-            logging.warning("No shockers found.")
+            shocker = pishock_api.shocker(PISHOCK_SHOCKER_ID)
+            print(f"Using custom shocker ID {shocker}")
 
 serial_q = Queue()
 serial_stop = threading.Event()
