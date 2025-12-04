@@ -2,8 +2,9 @@
 SHOCK_PARAMETER: "Shock" # Input the parameter name you want to use for the shock (for example for touches)
 SECOND_SHOCK_PARAMETER: "SlapShock" # Optional second parameter for stronger shocks, takes only the second half of the curve into account (for example for slaps)
 USE_PISHOCK: True # Set to True if using PiShock, False for OpenShock
-OPENSHOCK_SHOCKER_ID: 41838 # Default openshock ID, change if needed
-PISHOCK_SHOCKER_ID: # Change if needed // blank for auto detect (chooses first shocker found on the PiShock hub)
+OPENSHOCK_SHOCKER_ID: 41838 # Default openshock ID, change if needed, if you have multiple, split by comma (eg.: 12345, 23456)
+PISHOCK_SHOCKER_ID: # Change if needed // blank for auto detect (chooses first shocker found on the PiShock hub), if you have multiple, split by comma (eg.: 12345, 23456)
+RANDOM_OR_SEQUENTIAL: False # If using multiple shockers, this option chooses between randomizing or using them sequentially, False for random // True for sequential
 SERIAL_PORT: "" # Leave blank to auto-detect
 
 # Cooldown settings

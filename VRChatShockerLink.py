@@ -13,7 +13,6 @@ import numpy as np
 import threading
 import logging
 import random
-import socket
 import serial
 import time
 import json
@@ -36,9 +35,23 @@ except Exception as e:
     logging.exception("Could not load config.yml file. Using default config")
     config = {}
     
+def return_list(x):
+    if x is None:
+        return []
+
+    if isinstance(x, str):
+        parts = [p.strip() for p in x.split(",")]
+        return [p for p in parts if p]
+
+    if isinstance(x, (list, tuple)):
+        return list(x)
+
+    return [x]
+    
 # --- NETWORK / Serial Config
 USE_PISHOCK = config.get("USE_PISHOCK", False) # Use PiShock if True, else OpenShock
-OPENSHOCK_SHOCKER_ID = config.get("OPENSHOCK_SHOCKER_ID", 41838) # ID for OpenShock shocker
+OPENSHOCK_SHOCKER_IDS = return_list(config.get("OPENSHOCK_SHOCKER_ID", [None])) # ID for OpenShock shockers
+RANDOM_OR_SEQUENTIAL = config.get("RANDOM_OR_SEQUENTIAL", False)
 VRCHAT_HOST = config.get("VRCHAT_HOST", "127.0.0.1")
 OPENSHOCK_SERIAL_BAUDRATE = 115200
 SERIAL_PORT = config.get("serial_port", "")
@@ -94,8 +107,8 @@ last_trigger_time = 0
 # Pishock Vars
 if USE_PISHOCK:
     pishock_api = SerialAPI(port = SERIAL_PORT or None)
-    PISHOCK_SHOCKER_ID = config.get("PISHOCK_SHOCKER_ID", None)
-    shocker = None
+    PISHOCK_SHOCKER_IDS = return_list(config.get("PISHOCK_SHOCKER_ID", [None]))
+    shockers = None
     
 # Presets
 PRESET_COUNT = 3
@@ -120,8 +133,9 @@ def osc_server():
         logging.info(f"Started OSC server: {name}")
 
 serial_connection = None
+shockers = []
 def connect_serial():
-    global serial_connection, pishock_api, shocker
+    global serial_connection, pishock_api, shockers
 
     if not USE_PISHOCK:
         if serial_connection is None or not getattr(serial_connection, "is_open", False):
@@ -144,6 +158,7 @@ def connect_serial():
                             ser.flush()
                             logging.info(f"Connected to serial port {port}")
                             serial_connection = ser
+                            shockers = list(OPENSHOCK_SHOCKER_IDS)
                             return ser
                         else:
                             ser.close()
@@ -156,19 +171,22 @@ def connect_serial():
             serial_connection = None
             return None
     else:
-        # Find pishock shocker
-        info = pishock_api.info()
-        shockers = info.get("shockers", [])
-        first_shocker_id = shockers[0]["id"] if shockers else None
-        if not PISHOCK_SHOCKER_ID:
+        global shockers
+        if not PISHOCK_SHOCKER_IDS:
+             # Find pishock shocker
+            info = pishock_api.info()
+            shockers = info.get("shockers", [])
+            first_shocker_id = shockers[0]["id"] if shockers else None
             if first_shocker_id is not None:
                 logging.info(f"Found shocker with ID {first_shocker_id}")
-                shocker = pishock_api.shocker(first_shocker_id)
+                shockers = pishock_api.shocker(first_shocker_id)
             else:
                 logging.warning("No shockers found.")
         else:
-            shocker = pishock_api.shocker(PISHOCK_SHOCKER_ID)
-            print(f"Using custom shocker ID {shocker}")
+            for shocker_id in PISHOCK_SHOCKER_IDS:
+                shocker_instance = pishock_api.shocker(shocker_id)
+                shockers.append(shocker_instance)
+                print(f"Created shocker instance for ID {shocker_id}")
 
 serial_q = Queue()
 serial_stop = threading.Event()
@@ -455,8 +473,20 @@ def send_chat_message(message_text, clear_after=True):
         logging.info(f"Sent message: {message_text}")
 
 # Send shock command via serial
+last_shocker_index = -1
 def send_shock(duration_s, intensity_percent):
-    global serial_connection, shocker
+    global serial_connection, shockers, last_shocker_index
+    
+    if not RANDOM_OR_SEQUENTIAL:
+        # Random
+        chosen_shocker = random.choice(shockers)
+        logging.info(f"Selected shocker: {chosen_shocker}")
+    else:
+        # Sequential
+        last_shocker_index = (last_shocker_index + 1) % len(shockers)
+        chosen_shocker = shockers[last_shocker_index]
+        logging.info(f"Selected shocker: {chosen_shocker}")
+        
 
     # Using OpenShock
     if not USE_PISHOCK:
@@ -467,7 +497,7 @@ def send_shock(duration_s, intensity_percent):
         # Data for shock
         payload = {
             "model": "caixianlin",
-            "id": OPENSHOCK_SHOCKER_ID,
+            "id": chosen_shocker,
             "type": "shock",
             "intensity": int(intensity_percent),
             "durationMs": int(round(float(duration_s) * 1000))
@@ -476,8 +506,8 @@ def send_shock(duration_s, intensity_percent):
         serial_q.put((cmd + "\n").encode('ascii'))
         return
     else:
-        # Using PiShock
-        shocker.shock(duration=round(float(duration_s), 1), intensity=int(intensity_percent))
+        # Using PiShock  
+        chosen_shocker.shock(duration=round(float(duration_s), 1), intensity=int(intensity_percent))
 
 
 # ~~~      OSC MESSAGE HANDLER      ~~~
