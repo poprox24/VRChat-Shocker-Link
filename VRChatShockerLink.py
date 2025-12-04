@@ -171,7 +171,6 @@ def connect_serial():
             serial_connection = None
             return None
     else:
-        global shockers
         if not PISHOCK_SHOCKER_IDS:
              # Find pishock shocker
             info = pishock_api.info()
