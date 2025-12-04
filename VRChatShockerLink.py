@@ -107,7 +107,7 @@ last_trigger_time = 0
 # Pishock Vars
 if USE_PISHOCK:
     pishock_api = SerialAPI(port = SERIAL_PORT or None)
-    PISHOCK_SHOCKER_IDS = return_list(config.get("PISHOCK_SHOCKER_ID", [None]))
+    PISHOCK_SHOCKER_IDS = return_list(config.get("PISHOCK_SHOCKER_ID", []))
     shockers = None
     
 # Presets
