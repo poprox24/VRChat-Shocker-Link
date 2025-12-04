@@ -74,7 +74,7 @@ Make sure to download this program before you continue:
 
 1. Most stuff is self explanatory
 2. You can right click to manually input a number in the curve
-3. Temporary mode disables changes and will return to last saved state once it is disabled again
+3. Temporary mode pauses changes and will return to last saved state once it is disabled again
 4. Presets:
 - Left click to load
 - Right click to rename
