@@ -178,7 +178,8 @@ def connect_serial():
             first_shocker_id = shockers[0]["id"] if shockers else None
             if first_shocker_id is not None:
                 logging.info(f"Found shocker with ID {first_shocker_id}")
-                shockers = pishock_api.shocker(first_shocker_id)
+                shocker = pishock_api.shocker(first_shocker_id)
+                shockers.append(shocker)
             else:
                 logging.warning("No shockers found.")
         else:
