@@ -821,55 +821,87 @@ def on_mouse_motion(event):
         root.after_cancel(render_job)
     render_job = root.after(2, render_curve)
 
-# Render the curve and UI
+# Curve renderer
 def render_curve():
     ax.clear()
     sorted_pts = sorted(UI_CONTROL_POINTS, key=lambda p: p[0])
     curve = bezier_interpolate(sorted_pts)
 
-    # Background style
+    # Background style & grid below plot
     fig.patch.set_facecolor(OUTSIDE_CURVE_BG)
-    ax.set_facecolor(INSIDE_CURVE_BG)    
+    ax.set_facecolor(INSIDE_CURVE_BG)
+    ax.set_axisbelow(True)
 
-    # Draw curve
-    ax.plot(curve[:, 0], curve[:, 1], color=CURVE_LINE_COLOR, linewidth=LINE_WIDTH)
+    # Dynamically compute canvas pixel size to scale marker sizes
+    try:
+        widget = canvas.get_tk_widget()
+        w = widget.winfo_width()
+        h = widget.winfo_height()
+        if not w or not h:
+            dpi = fig.get_dpi()
+            w = fig.get_figwidth() * dpi
+            h = fig.get_figheight() * dpi
+    except Exception:
+        dpi = fig.get_dpi()
+        w = fig.get_figwidth() * dpi
+        h = fig.get_figheight() * dpi
+
+    scale = max(0.5, (w / 500.0))
+    scaled_marker_size = TOUCH_MARKER_SIZE * scale
+
+    # Draw curve (above grid)
+    ax.plot(curve[:, 0], curve[:, 1], linewidth=LINE_WIDTH, zorder=4)
 
     # Marker points
     xs, ys = zip(*sorted_pts)
-    ax.scatter(xs, ys, zorder=5, color=MARKER_COLOR, s=TOUCH_MARKER_SIZE, edgecolors='k', marker="o", linewidth=0.6)
+    ax.scatter(xs, ys, zorder=6, s=scaled_marker_size, edgecolors='k',
+               marker="o", linewidth=0.6, facecolor=MARKER_COLOR)
 
-    # Draw ring around selected point
+    # Selected ring
     try:
         if dragging_index is not None and 0 <= dragging_index < len(sorted_pts):
             sx, sy = UI_CONTROL_POINTS[dragging_index]
-            ax.scatter([sx], [sy], s=TOUCH_MARKER_SIZE * 1.8, facecolors="none",
-                       edgecolors='white', marker="o", linewidths=1.4, alpha=0.45, zorder=4)
+            ax.scatter([sx], [sy], s=scaled_marker_size * 1.8, facecolors="none",
+                       edgecolors='white', marker="o", linewidths=1.4, alpha=0.45, zorder=7)
         if highlight_index is not None:
             sx, sy = UI_CONTROL_POINTS[highlight_index]
-            ax.scatter([sx], [sy], s=TOUCH_MARKER_SIZE * 1.8, facecolors="none",
-                       edgecolors='white', marker="o", linewidths=1.4, alpha=0.45, zorder=4)
+            ax.scatter([sx], [sy], s=scaled_marker_size * 1.8, facecolors="none",
+                       edgecolors='white', marker="o", linewidths=1.4, alpha=0.45, zorder=7)
     except Exception:
         logging.exception("Unable to draw ring around selected point. (You can ignore this error)")
         pass
 
-    # Draw min/max lines
+    # Min/Max lines
     min_x, min_y = sorted_pts[0]
     max_x, max_y = sorted_pts[-1]
-    ax.axvline(min_x, color='#5eead4', linestyle='--', label=f"Min {int(min_x)}% with {min_y *10:.1f} weight", linewidth=1)
-    ax.axvline(max_x, color='#fbbf24', linestyle='--', label=f"Max {int(max_x)}% with {max_y * 10:.1f} weight", linewidth=1)
+    ax.axvline(min_x, color='#5eead4', linestyle='--',
+               label=f"Min {int(min_x)}% with {min_y *10:.1f} weight", linewidth=1, zorder=2)
+    ax.axvline(max_x, color='#fbbf24', linestyle='--',
+               label=f"Max {int(max_x)}% with {max_y * 10:.1f} weight", linewidth=1, zorder=2)
 
-    # Labels
+    # Labels & styling
     ax.set_title("Intensity Probability Curve", fontsize=14, color=LABEL_COLOR, pad=8)
     ax.set_xlabel("Intensity (%)", fontsize=12, color=LABEL_COLOR)
     ax.set_ylabel("Weight", fontsize=12, color=LABEL_COLOR)
-
-    # Axis styling
     ax.set_yticks(np.linspace(0, 1, 11))
     ax.set_yticklabels([f"{v:.1f}" for v in np.linspace(0, 1, 11)], color=LABEL_COLOR)
-
     ax.tick_params(axis='x', colors=LABEL_COLOR)
     ax.tick_params(axis='y', colors=LABEL_COLOR)
 
+    # Grid locked to fives (0,5,10,15,...100), clipped to current UI view
+    xmin = UI_VIEW_MIN_PERCENT
+    xmax = UI_VIEW_MAX_PERCENT
+    all_fives = np.arange(0, 101, 5)
+    major_xticks = all_fives[(all_fives >= xmin) & (all_fives <= xmax)]
+
+    # Fallback if no fives in range (keeps axis readable)
+    if major_xticks.size == 0:
+        major_xticks = np.array([xmin, xmax])
+
+    ax.set_xticks(major_xticks)
+    ax.grid(which='major', linestyle='-', linewidth=0.9, alpha=0.6)
+
+    # Legend
     legend = ax.legend(loc='upper right', bbox_to_anchor=(1.02, 1.0), framealpha=0.9, fontsize=10)
     if legend:
         legend.get_frame().set_facecolor(OUTSIDE_CURVE_BG)
