@@ -832,40 +832,23 @@ def render_curve():
     ax.set_facecolor(INSIDE_CURVE_BG)
     ax.set_axisbelow(True)
 
-    # Dynamically compute canvas pixel size to scale marker sizes
-    try:
-        widget = canvas.get_tk_widget()
-        w = widget.winfo_width()
-        h = widget.winfo_height()
-        if not w or not h:
-            dpi = fig.get_dpi()
-            w = fig.get_figwidth() * dpi
-            h = fig.get_figheight() * dpi
-    except Exception:
-        dpi = fig.get_dpi()
-        w = fig.get_figwidth() * dpi
-        h = fig.get_figheight() * dpi
-
-    scale = max(0.5, (w / 500.0))
-    scaled_marker_size = TOUCH_MARKER_SIZE * scale
-
     # Draw curve (above grid)
     ax.plot(curve[:, 0], curve[:, 1], linewidth=LINE_WIDTH, zorder=4)
 
     # Marker points
     xs, ys = zip(*sorted_pts)
-    ax.scatter(xs, ys, zorder=6, s=scaled_marker_size, edgecolors='k',
+    ax.scatter(xs, ys, zorder=6, s=TOUCH_MARKER_SIZE, edgecolors='k',
                marker="o", linewidth=0.6, facecolor=MARKER_COLOR)
 
     # Selected ring
     try:
         if dragging_index is not None and 0 <= dragging_index < len(sorted_pts):
             sx, sy = UI_CONTROL_POINTS[dragging_index]
-            ax.scatter([sx], [sy], s=scaled_marker_size * 1.8, facecolors="none",
+            ax.scatter([sx], [sy], s=TOUCH_MARKER_SIZE * 1.8, facecolors="none",
                        edgecolors='white', marker="o", linewidths=1.4, alpha=0.45, zorder=7)
         if highlight_index is not None:
             sx, sy = UI_CONTROL_POINTS[highlight_index]
-            ax.scatter([sx], [sy], s=scaled_marker_size * 1.8, facecolors="none",
+            ax.scatter([sx], [sy], s=TOUCH_MARKER_SIZE * 1.8, facecolors="none",
                        edgecolors='white', marker="o", linewidths=1.4, alpha=0.45, zorder=7)
     except Exception:
         logging.exception("Unable to draw ring around selected point. (You can ignore this error)")
