@@ -58,6 +58,7 @@ How to setup this project
 
 Make sure to download this program before you continue:
 * [Python](https://www.python.org/downloads/)
+* [Git](https://git-scm.com/)
 
 ### Installation
 
