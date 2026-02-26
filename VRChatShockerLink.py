@@ -834,7 +834,7 @@ def render_curve():
     ax.set_facecolor(INSIDE_CURVE_BG)
     ax.set_axisbelow(True)
 
-    # Gradient background
+    # --- Conservative horizontal gradient (limited to visible UI view, with solid edges) ---
     def hex_to_rgb01(h):
         h = h.lstrip('#')
         return tuple(int(h[i:i+2], 16) / 255.0 for i in (0, 2, 4))
@@ -842,14 +842,39 @@ def render_curve():
     left_rgb = np.array(hex_to_rgb01(GRADIENT_LEFT_COLOR))
     right_rgb = np.array(hex_to_rgb01(GRADIENT_RIGHT_COLOR))
 
+    # Compute extent from current UI view (keeps gradient inside what's visible)
+    extent_left = float(UI_VIEW_MIN_PERCENT)
+    extent_right = float(UI_VIEW_MAX_PERCENT)
+    width = max(0.0001, extent_right - extent_left)  # avoid div-by-zero
+
+    # pad fraction = portion on each side that stays a solid color before the blend begins
+    # tweak this value to make edges more/less conservative; 0.06 = 6% of visible width
+    pad_fraction = 0.06
+    left_stop = pad_fraction
+    right_stop = 1.0 - pad_fraction
+
+    # build gradient array with deliberate solid edges and a narrower blending band
     ncols = 512
-    nrows = 40
-    row = np.linspace(left_rgb, right_rgb, ncols)[None, :, :]
-    gradient = np.repeat(row, nrows, axis=0)
+    nrows = 48
+    cols = np.linspace(0.0, 1.0, ncols)
+    colors = np.zeros((ncols, 3), dtype=float)
+    # for each column compute interpolation factor u in [0,1] only over the central band
+    band_width = max(1e-6, right_stop - left_stop)
+    for i, c in enumerate(cols):
+        if c <= left_stop:
+            u = 0.0
+        elif c >= right_stop:
+            u = 1.0
+        else:
+            u = (c - left_stop) / band_width
+        colors[i, :] = left_rgb * (1.0 - u) + right_rgb * u
 
-    ax.imshow(gradient, extent=(0, 100, 0, 1), aspect='auto', origin='lower', zorder=0)
+    gradient = np.tile(colors[None, :, :], (nrows, 1, 1))
 
-    # Draw curve
+    # draw gradient only across the visible UI range (so it doesn't bleed outside)
+    ax.imshow(gradient, extent=(extent_left, extent_right, 0, 1), aspect='auto', origin='lower', zorder=0)
+
+    # Draw curve (above gradient)
     ax.plot(curve[:, 0], curve[:, 1], linewidth=LINE_WIDTH, zorder=4)
 
     # Marker points
