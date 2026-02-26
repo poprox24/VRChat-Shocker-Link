@@ -88,6 +88,8 @@ MARKER_COLOR = config.get("MARKER_COLOR", "#D88A91")
 LABEL_COLOR = config.get("LABEL_COLOR", "#E6EEF6")
 PRESET_NORMAL_BG = config.get("PRESET_NORMAL_BG", "#202630")
 PRESET_DEFAULT_BG = config.get("PRESET_DEFAULT_BG", "#2E8A57")
+GRADIENT_LEFT_COLOR = config.get("GRADIENT_LEFT_COLOR", "#6e173b")
+GRADIENT_RIGHT_COLOR = config.get("GRADIENT_RIGHT_COLOR", "#42953b")
 
 # ~~~      VARIABLES      ~~~
 # Drag/Edit state
@@ -832,7 +834,22 @@ def render_curve():
     ax.set_facecolor(INSIDE_CURVE_BG)
     ax.set_axisbelow(True)
 
-    # Draw curve (above grid)
+    # Gradient background
+    def hex_to_rgb01(h):
+        h = h.lstrip('#')
+        return tuple(int(h[i:i+2], 16) / 255.0 for i in (0, 2, 4))
+
+    left_rgb = np.array(hex_to_rgb01(GRADIENT_LEFT_COLOR))
+    right_rgb = np.array(hex_to_rgb01(GRADIENT_RIGHT_COLOR))
+
+    ncols = 512
+    nrows = 40
+    row = np.linspace(left_rgb, right_rgb, ncols)[None, :, :]
+    gradient = np.repeat(row, nrows, axis=0)
+
+    ax.imshow(gradient, extent=(0, 100, 0, 1), aspect='auto', origin='lower', zorder=0)
+
+    # Draw curve
     ax.plot(curve[:, 0], curve[:, 1], linewidth=LINE_WIDTH, zorder=4)
 
     # Marker points
@@ -882,7 +899,7 @@ def render_curve():
         major_xticks = np.array([xmin, xmax])
 
     ax.set_xticks(major_xticks)
-    ax.grid(which='major', linestyle='-', linewidth=0.9, alpha=0.6)
+    ax.grid(which='major', linestyle='-', linewidth=0.9, alpha=0.6, zorder=3)
 
     # Legend
     legend = ax.legend(loc='upper right', bbox_to_anchor=(1.02, 1.0), framealpha=0.9, fontsize=10)
