@@ -73,9 +73,10 @@ Make sure to download this program before you continue:
 ### Usage
 
 1. Most stuff is self explanatory
-2. You can right click to manually input a number in the curve
-3. Temporary mode pauses changes and will return to last saved state once it is disabled again
-4. Presets:
+2. The PiShock/OpenShock hub needs to be connected to the PC, this program uses serial for low latency
+3. You can right click to manually input a number in the curve
+4. Temporary mode pauses changes and will return to last saved state once it is disabled again
+5. Presets:
 - Left click to load
 - Right click to rename
 - Middle click to default
