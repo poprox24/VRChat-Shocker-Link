@@ -474,49 +474,53 @@ def send_chat_message(message_text, clear_after=True):
             return
         logging.info(f"Sent message: {message_text}")
 
-# Send shock command via serial
 last_shocker_index = -1
-def send_shock(duration_s, intensity_percent):
-    global serial_connection, shockers, last_shocker_index
+shock_q = Queue()
+def shocker_worker():
+    global shock_q, serial_connection, shockers, last_shocker_index
+    while True:
+        intensity_percent, duration_s = shock_q.get()
     
-    if not RANDOM_OR_SEQUENTIAL:
-        # Random
-        chosen_shocker = random.choice(shockers)
-        logging.info(f"Selected shocker: {chosen_shocker}")
-    else:
-        # Sequential
-        last_shocker_index = (last_shocker_index + 1) % len(shockers)
-        chosen_shocker = shockers[last_shocker_index]
-        logging.info(f"Selected shocker: {chosen_shocker}")
-        
+        if not RANDOM_OR_SEQUENTIAL:
+            # Random
+            chosen_shocker = random.choice(shockers)
+            logging.info(f"Selected shocker: {chosen_shocker}")
+        else:
+            # Sequential
+            last_shocker_index = (last_shocker_index + 1) % len(shockers)
+            chosen_shocker = shockers[last_shocker_index]
+            logging.info(f"Selected shocker: {chosen_shocker}")
+            
 
-    # Using OpenShock
-    if not USE_PISHOCK:
-        if serial_connection is None or not getattr(serial_connection, "is_open", False):
-            logging.warning("Serial not available. Cannot send shock. Attempting to reconnect...")
-            connect_serial()
-            return
-        # Data for shock
-        payload = {
-            "model": "caixianlin",
-            "id": chosen_shocker,
-            "type": "shock",
-            "intensity": int(intensity_percent),
-            "durationMs": int(round(float(duration_s) * 1000))
-        }
-        cmd = "rftransmit " + json.dumps(payload)
-        serial_q.put((cmd + "\n").encode('ascii'))
-        return
-    else:
-        # Using PiShock  
-        chosen_shocker.shock(duration=round(float(duration_s), 1), intensity=int(intensity_percent))
-
+        # Using OpenShock
+        if not USE_PISHOCK:
+            if serial_connection is None or not getattr(serial_connection, "is_open", False):
+                logging.warning("Serial not available. Cannot send shock. Attempting to reconnect...")
+                connect_serial()
+                if serial_connection and serial_connection.is_open:
+                    shock_q.put((intensity_percent, duration_s)) # Re-queue shock
+                else:
+                    logging.error("Reconnect failed, dropping shock.")
+                continue
+            # Data for shock
+            payload = {
+                "model": "caixianlin",
+                "id": chosen_shocker,
+                "type": "shock",
+                "intensity": int(intensity_percent),
+                "durationMs": int(round(float(duration_s) * 1000))
+            }
+            cmd = "rftransmit " + json.dumps(payload)
+            serial_q.put((cmd + "\n").encode('ascii'))
+        else:
+            # Using PiShock  
+            chosen_shocker.shock(duration=round(float(duration_s), 1), intensity=int(intensity_percent))
 
 # ~~~      OSC MESSAGE HANDLER      ~~~
 # Handle incoming OSC packets
 state_lock = threading.Lock()
 def handle_osc_packet(address, *args):
-    global last_trigger_time, trigger_timestamps, state_lock
+    global last_trigger_time, trigger_timestamps, state_lock, shock_q
 
     # Only accept valid shock parameter
     if (address == SHOCK_PARAM or address == SECOND_SHOCK_PARAM) and args:
@@ -549,18 +553,18 @@ def handle_osc_packet(address, *args):
 
             if address == SHOCK_PARAM:
                 # For main shock param, use full curve
-                intensity = int(random.choices(intensities, weights=weights, k=1)[0])
+                intensity_percent = int(random.choices(intensities, weights=weights, k=1)[0])
             else:
                 # For second shock param, use only the upper half of the curve
                 sorted_indices = np.argsort(intensities)
                 upper_half_indices = sorted_indices[len(sorted_indices)//2:]
-                intensity = int(random.choices(intensities[upper_half_indices], weights=weights[upper_half_indices], k=1)[0])
+                intensity_percent = int(random.choices(intensities[upper_half_indices], weights=weights[upper_half_indices], k=1)[0])
 
-            duration = round(random.uniform(MIN_SHOCK_DURATION, MAX_SHOCK_DURATION), 1)
+            duration_s = round(random.uniform(MIN_SHOCK_DURATION, MAX_SHOCK_DURATION), 1)
 
             # Send shock and chat message
-            send_shock(duration_s=duration, intensity_percent=intensity)
-            send_chat_message(f"⚡ {intensity}% | {duration}s")
+            shock_q.put((intensity_percent, duration_s))
+            send_chat_message(f"⚡ {intensity_percent}% | {duration_s}s")
             
 # ~~~      Bezier Curve and Distribution Logic      ~~~
 # Bezier curve interpolation for rendering curve
@@ -1201,6 +1205,7 @@ def shutdown():
     save_config()
     logging.info("Stopping server")
     osc_server_thread.join(timeout=1)
+    shocker_thread.join(timeout=1)
     global serial_connection
     try:
         serial_stop.set()
@@ -1215,6 +1220,7 @@ def shutdown():
 # Start OSC server thread
 osc_server_thread = threading.Thread(target=osc_server, daemon=True)
 serial_thread = threading.Thread(target=serial_worker, daemon=True)
+shocker_thread = threading.Thread(target=shocker_worker, daemon=True)
 
 root.protocol("WM_DELETE_WINDOW", shutdown)
 
@@ -1222,6 +1228,7 @@ def start_services():
     connect_serial()
     serial_thread.start()
     osc_server_thread.start()
+    shocker_thread.start()
 
 start_services()
 # Start Tkinter main loop
