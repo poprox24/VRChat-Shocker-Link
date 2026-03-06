@@ -55,10 +55,10 @@ RANDOM_OR_SEQUENTIAL = config.get("RANDOM_OR_SEQUENTIAL", False)
 VRCHAT_HOST = config.get("VRCHAT_HOST", "127.0.0.1")
 OPENSHOCK_SERIAL_BAUDRATE = 115200
 SERIAL_PORT = config.get("serial_port", "")
-SHOCK_PARAM = f"/avatar/parameters/{config.get('SHOCK_PARAMETER', 'Shock')}" # OSC parameter to listen for shock trigger
-SECOND_SHOCK_PARAM = f"/avatar/parameters/{config.get('SECOND_SHOCK_PARAMETER', 'SlapShock') or 'SlapShock'}" # Seccond parameter for stronger shocks, if empty use "SlapShock" to prevent false OSC triggers
+SHOCK_PARAM = f"/avatar/parameters/{config.get('SHOCK_PARAMETER', None)}" # OSC parameter to listen for shock trigger
+SECOND_SHOCK_PARAM = f"/avatar/parameters/{config.get('SECOND_SHOCK_PARAMETER', None)}" # Seccond parameter for stronger shocks
 
-client = vrc_client()
+client = None
 
 # Base config
 BASE_COOLDOWN_S = config.get("BASE_COOLDOWN_S", 2)
@@ -130,6 +130,9 @@ def osc_server():
         server2 = vrc_osc("Schocker Link Second Param", dict_to_dispatcher({f"{SECOND_SHOCK_PARAM}": handle_osc_packet}))
         servers.append(("2nd", server2))
     
+    if not servers:
+        logging.warning("No OSC parameters setup, please set them up in the config file.")
+    
     for name, srv in servers:
         threading.Thread(target=srv.serve_forever, daemon=True).start()
         logging.info(f"Started OSC server: {name}")
@@ -167,7 +170,7 @@ def connect_serial():
                     except Exception as e:
                         logging.exception(f"Failed on {port}: {e}")
                     logging.warning(f"Reconnection attempt {attempt+1}/3 failed. Retrying in 3 seconds...")
-                    time.sleep(3)
+                time.sleep(3)
 
             logging.error("Failed to open serial. Shocks disabled.")
             serial_connection = None
@@ -209,18 +212,15 @@ def serial_worker():
                     serial_connection.flush()
                     break
             except Exception as e:
-                try:
-                    serial_connection.write(cmd)
-                    serial_connection.flush()
-                except Exception as e:
-                    logging.exception(f"Failed to write to serial (Attempt {attempt+1}/{max_retries}): {e}")
-                    time.sleep(0.5)
+                logging.exception(f"Failed to write to serial (Attempt {attempt+1}/{max_retries}): {e}")
+                serial_connection = None # Forces reconnect on next iteration
+                time.sleep(0.5)
         else:
             print("Failed to send shock after retries.")
             
 # Apply a snapshot
 def apply_snapshot(snapshot):
-    global MIN_SHOCK_DURATION, MAX_SHOCK_DURATION, UI_VIEW_MIN_PERCENT, UI_VIEW_MAX_PERCENT
+    global MIN_SHOCK_DURATION, MAX_SHOCK_DURATION, UI_VIEW_MIN_PERCENT, UI_VIEW_MAX_PERCENT, curve_cache
     
     UI_CONTROL_POINTS.clear()
     UI_CONTROL_POINTS.extend(snapshot["curve_points"])
@@ -228,6 +228,8 @@ def apply_snapshot(snapshot):
     MAX_SHOCK_DURATION = snapshot["max_duration"]
     UI_VIEW_MIN_PERCENT = snapshot["ui_min_x"]
     UI_VIEW_MAX_PERCENT = snapshot["ui_max_x"]
+    
+    curve_cache = None
 
     # Update UI elements
     try:
@@ -484,6 +486,10 @@ def shocker_worker():
             intensity_percent, duration_s = shock_q.get(timeout=0.4)
         except Empty:
             continue
+        
+        if not shockers:
+            logging.warning("No shockers configured, dropping shock.")
+            continue
     
         if not RANDOM_OR_SEQUENTIAL:
             # Random
@@ -529,7 +535,7 @@ def handle_osc_packet(address, *args):
         return
 
     # Only accept valid shock parameter
-    if (address == SHOCK_PARAM or address == SECOND_SHOCK_PARAM) and args:
+    if (address == SHOCK_PARAM or address == SECOND_SHOCK_PARAM):
         
         now = time.time()
         with state_lock:
@@ -539,11 +545,15 @@ def handle_osc_packet(address, *args):
 
             # Check cooldown
             if COOLDOWN_ENABLED and now - last_trigger_time <= dynamic_cooldown:
-                send_chat_message(f"On cooldown: {round(last_trigger_time - now + dynamic_cooldown, 1)}s")
-                return
+                cooldown_msg = f"On cooldown: {round(last_trigger_time - now + dynamic_cooldown, 1)}s"
             else:
+                cooldown_msg = None
                 last_trigger_time = now
                 trigger_timestamps.append(now)
+        
+        if cooldown_msg:
+            send_chat_message(cooldown_msg)
+            return
 
         # Determine shock intensity and duration
         intensities, weights = compute_curve_distribution()
@@ -566,29 +576,34 @@ def handle_osc_packet(address, *args):
 # ~~~      Bezier Curve and Distribution Logic      ~~~
 # Bezier curve interpolation for rendering curve
 def bezier_interpolate(points, steps=100):
-    # Prepare points and curve
-    p0, p1, p2 = points
-    curve = []
-    # Calculate curve points
-    t_vals = np.linspace(0, 1, steps)
-    # Quadratic Bezier formula
-    for t in t_vals:
-        x = (1 - t) ** 2 * p0[0] + 2 * (1 - t) * t * p1[0] + t ** 2 * p2[0]
-        y = (1 - t) ** 2 * p0[1] + 2 * (1 - t) * t * p1[1] + t ** 2 * p2[1]
-        curve.append((x, y))
-
-    return np.array(curve)
+    p0, p1, p2 = np.array(points[0]), np.array(points[1]), np.array(points[2])
+    t = np.linspace(0, 1, steps)[:, None]
+    return (1-t)**2 * p0 + 2*(1-t)*t * p1 + t**2 * p2
 
 # Compute intensity distribution from curve
+curve_cache = None
+curve_cache_key = None
 def compute_curve_distribution():
+    global curve_cache, curve_cache_key
+    
     # Generate a smooth curve from control points
     # Honestly this is math I barely understand, but it works
+    
+    key = tuple(UI_CONTROL_POINTS)
+    
+    if curve_cache is not None and key == curve_cache_key:
+        return curve_cache # Same points as last time, skip compute
+    
+    # Points changed, compute
     curve = bezier_interpolate(sorted(UI_CONTROL_POINTS, key=lambda p: p[0]), steps=100)
     curve = curve[curve[:, 1] > 0]
     xs = np.clip(curve[:, 0].astype(int), 1, 100)
     ys = np.clip(curve[:, 1], 0, 1)
     if ys.sum() == 0:
         ys[:] = 1
+        
+    curve_cache = (xs, ys)
+    curve_cache_key = key
     return xs, ys
 
 
@@ -614,7 +629,7 @@ def on_ui_view_min_change(val):
         ui_min_scale.set(v)
     UI_VIEW_MIN_PERCENT = max(1, min(99, v))
     min_view_var.set(f"UI View Min ({int(UI_VIEW_MIN_PERCENT)}%)")
-    render_curve()
+    debounced_render()
 
 # UI view max change
 def on_ui_view_max_change(val):
@@ -625,11 +640,11 @@ def on_ui_view_max_change(val):
         ui_max_scale.set(v)
     UI_VIEW_MAX_PERCENT = min(100, max(2, v))
     max_view_var.set(f"UI View Max ({int(UI_VIEW_MAX_PERCENT)}%)")
-    render_curve()
+    debounced_render()
 
 # Finish text edit from right-click entry
 def finish_text_edit(event=None):
-    global right_click_input_widget, highlight_index
+    global right_click_input_widget, highlight_index, curve_cache
 
     # If no widget, return
     if not right_click_input_widget:
@@ -666,6 +681,7 @@ def finish_text_edit(event=None):
 
     # Update point and re-render
     UI_CONTROL_POINTS[nearest] = (x_val, y_val / 100)
+    curve_cache = None
     save_config()
     render_curve()
 
@@ -766,16 +782,16 @@ def on_mouse_press(event):
 
 # Mouse release handler
 def on_mouse_release(event):
-    global dragging_index
+    global dragging_index, curve_cache
     
     dragging_index = None
     drag_context.clear()
+    curve_cache = None
     save_config()
 
 # Mouse motion handler
-render_job = None
 def on_mouse_motion(event):
-    global dragging_index, render_job
+    global dragging_index, render_job, curve_cache
 
     # Ignore if not dragging
     if dragging_index is None or event.inaxes != ax or event.xdata is None:
@@ -787,6 +803,7 @@ def on_mouse_motion(event):
 
     # Logic for middle point
     UI_CONTROL_POINTS[dragging_index] = (new_x, new_y)
+    curve_cache = None # Update cache while dragging the mouse
 
     # If dragging an endpoint and we have stored start positions, move middle relative to them
     if len(UI_CONTROL_POINTS) == 3 and dragging_index in (0, 2) and "start_endpoint_pos" in drag_context:
@@ -797,6 +814,7 @@ def on_mouse_motion(event):
         dy = new_y - y0
 
         UI_CONTROL_POINTS[1] = (mx0 + dx, my0 + dy)
+        curve_cache = None # Update cache after middle point updates
 
     # If we have a follow mode, adjust middle point accordingly
     # Average the first and last points to stay relatively centered
@@ -820,9 +838,22 @@ def on_mouse_motion(event):
 
         UI_CONTROL_POINTS[1] = (float(new_mid[0]), float(new_mid[1]))
         
-    if render_job is not None:
-        root.after_cancel(render_job)
-    render_job = root.after(2, render_curve)
+    debounced_render()
+
+def build_gradient():
+    # Gradient background
+    def hex_to_rgb01(h):
+        h = h.lstrip('#')
+        return tuple(int(h[i:i+2], 16) / 255.0 for i in (0, 2, 4))
+
+    left_rgb = np.array(hex_to_rgb01(GRADIENT_LEFT_COLOR))
+    right_rgb = np.array(hex_to_rgb01(GRADIENT_RIGHT_COLOR))
+
+    ncols = 512
+    row = np.linspace(left_rgb, right_rgb, ncols)[None, :, :]
+    return np.repeat(row, 40, axis=0)
+
+gradient = build_gradient()
 
 # Curve renderer
 def render_curve():
@@ -834,19 +865,6 @@ def render_curve():
     fig.patch.set_facecolor(OUTSIDE_CURVE_BG)
     ax.set_facecolor(INSIDE_CURVE_BG)
     ax.set_axisbelow(True)
-
-    # Gradient background
-    def hex_to_rgb01(h):
-        h = h.lstrip('#')
-        return tuple(int(h[i:i+2], 16) / 255.0 for i in (0, 2, 4))
-
-    left_rgb = np.array(hex_to_rgb01(GRADIENT_LEFT_COLOR))
-    right_rgb = np.array(hex_to_rgb01(GRADIENT_RIGHT_COLOR))
-
-    ncols = 512
-    nrows = 40
-    row = np.linspace(left_rgb, right_rgb, ncols)[None, :, :]
-    gradient = np.repeat(row, nrows, axis=0)
 
     ax.imshow(gradient, extent=(0, 100, 0, 1), aspect='auto', origin='lower', zorder=0)
 
@@ -913,8 +931,15 @@ def render_curve():
     ax.set_xlim(UI_VIEW_MIN_PERCENT, UI_VIEW_MAX_PERCENT)
     ax.set_ylim(0, 1)
 
-    fig.tight_layout(pad=1.2)
     canvas.draw_idle()
+    
+render_job = None
+def debounced_render():
+    global render_job
+    
+    if render_job:
+        root.after_cancel(render_job)
+    render_job = root.after(2, render_curve)
 
 # Slider release handler
 def on_slider_release(event):
@@ -1170,7 +1195,7 @@ load_undo_snapshot()
 
 # Toggle temporary config
 def toggle_temporary_mode():
-    global UI_CONTROL_POINTS, MIN_SHOCK_DURATION, MAX_SHOCK_DURATION, UI_VIEW_MIN_PERCENT, UI_VIEW_MAX_PERCENT
+    global UI_CONTROL_POINTS, MIN_SHOCK_DURATION, MAX_SHOCK_DURATION, UI_VIEW_MIN_PERCENT, UI_VIEW_MAX_PERCENT, curve_cache
 
     # If enabling, reload config from file to return to last saved state
     if not temporary_mode_disabled.get():
@@ -1179,23 +1204,31 @@ def toggle_temporary_mode():
                 with open(CONFIG_FILE_PATH, "r") as f:
                     data = json.load(f)
                 new_pts = [(float(x), float(y)) for x, y in data.get("curve_points", [])]
+                
                 UI_CONTROL_POINTS.clear()
                 UI_CONTROL_POINTS.extend(new_pts)
+                curve_cache = None
+                
                 MIN_SHOCK_DURATION = float(data.get("min_duration", MIN_SHOCK_DURATION))
                 MAX_SHOCK_DURATION = float(data.get("max_duration", MAX_SHOCK_DURATION))
                 UI_VIEW_MIN_PERCENT = int(data.get("ui_min_x", data.get("curve_min_x", UI_VIEW_MIN_PERCENT)))
                 UI_VIEW_MAX_PERCENT = int(data.get("ui_max_x", data.get("curve_max_x", UI_VIEW_MAX_PERCENT)))
+                
                 render_curve()
+                
                 min_duration_scale.set(MIN_SHOCK_DURATION)
                 max_duration_scale.set(MAX_SHOCK_DURATION)
                 min_duration_var.set(f"Min Duration ({MIN_SHOCK_DURATION:.1f}s)")
                 max_duration_var.set(f"Max Duration ({MAX_SHOCK_DURATION:.1f}s)")
                 ui_min_scale.set(UI_VIEW_MIN_PERCENT)
                 ui_max_scale.set(UI_VIEW_MAX_PERCENT)
+                
                 logging.info("Config reloaded on temporary disable")
             except Exception as e:
                 logging.exception(f"Failed to reload config: {e}")
     logging.info(f"Temporary mode {'enabled' if temporary_mode_disabled.get() else 'disabled'}")
+    
+root.after(0, lambda: (fig.tight_layout(pad=1.2), canvas.draw_idle()))
     
 # def log_thread_count():
 #     while True:
@@ -1233,10 +1266,14 @@ shocker_thread = threading.Thread(target=shocker_worker, daemon=True)
 root.protocol("WM_DELETE_WINDOW", shutdown)
 
 def start_services():
+    global client
+    
+    client = vrc_client()
     connect_serial()
     serial_thread.start()
     osc_server_thread.start()
     shocker_thread.start()
+    
     # logging_thread_count_thread.start()
 
 start_services()
