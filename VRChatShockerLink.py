@@ -63,7 +63,7 @@ client = vrc_client()
 # Base config
 BASE_COOLDOWN_S = config.get("BASE_COOLDOWN_S", 2)
 MAX_COOLDOWN_S = config.get("MAX_COOLDOWN_S", 6)
-COOLDOWN_FACTOR_S = config.get("MAX_COOLDOWN_S", 0.4)
+COOLDOWN_FACTOR_S = config.get("COOLDOWN_FACTOR_S", 0.4)
 COOLDOWN_WINDOW_S = config.get("COOLDOWN_WINDOW_S", 30)
 COOLDOWN_ENABLED = config.get("COOLDOWN_ENABLED", True)
 
