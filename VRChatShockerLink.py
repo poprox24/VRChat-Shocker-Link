@@ -66,9 +66,6 @@ COOLDOWN_FACTOR_S = config.get("COOLDOWN_FACTOR_S", 0.4)
 COOLDOWN_WINDOW_S = config.get("COOLDOWN_WINDOW_S", 30)
 COOLDOWN_ENABLED = config.get("COOLDOWN_ENABLED", True)
 
-MIN_SHOCK_DURATION = 0.4
-MAX_SHOCK_DURATION = 1.7
-
 UI_VIEW_MIN_PERCENT = 30
 UI_VIEW_MAX_PERCENT = 68
 UI_CONTROL_POINTS = [(36, 0.5), (45, 0.4), (59, 0.25)]
@@ -130,6 +127,8 @@ last_shocker_index = -1         # Last shocker used for sequential firing
 shock_q = Queue()               # Shocker queue
 shocker_stop = threading.Event()# Shocker stop for shutdown logic
 
+MIN_SHOCK_DURATION = -1
+MAX_SHOCK_DURATION = -1
 MESSAGE_COOLDOWN = 1.2          # VRC Message Cooldown
 
 # Config for chat message sending
@@ -537,7 +536,7 @@ def shocker_worker():
     global shock_q, serial_connection, shockers, last_shocker_index
     while not shocker_stop.is_set():
         try:
-            intensity_percent, duration_s = shock_q.get(timeout=0.4)
+            intensity_percent, duration_s = shock_q.get(timeout=0.3)
         except Empty:
             continue
         
