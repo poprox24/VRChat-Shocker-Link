@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 import re
 import sys
 from pathlib import Path
@@ -39,7 +37,6 @@ CANONICAL = [
     ("key", "VRCHAT_HOST", 'VRCHAT_HOST: "127.0.0.1"'),
     ("key", "OSC_LISTEN_PORT", "OSC_LISTEN_PORT: 9001"),
     ("key", "OSC_SEND_PORT", "OSC_SEND_PORT: 9000"),
-    ("key", "test", "test: 9000"),
 ]
 
 KEY_RE = re.compile(r"^([A-Z_]+)\s*:")
@@ -59,16 +56,16 @@ def find_insert_position(file_lines: list[str], canonical_index: int, file_keys:
     for i in range(canonical_index - 1, -1, -1):
         ctype, ckey, _ = CANONICAL[i]
         if ctype == "key" and ckey in file_keys:
-            return file_keys[ckey] + 1  # insert after that key's line
-    return len(file_lines)  # fallback: append
+            return file_keys[ckey] + 1  # Insert after that key's line
+    return len(file_lines)  # Fallback: append
 
 
 def update_config(path: Path) -> None:
     if not path.exists():
-        print(f"Config not found at {path}, creating fresh.")
+        print(f"[ConfigSync] Config not found at {path}, creating fresh.")
         text = "\n".join(line for _, _, line in CANONICAL) + "\n"
         path.write_text(text, encoding="utf-8")
-        print("Done.")
+        print("[ConfigSync] Done.")
         return
 
     lines = path.read_text(encoding="utf-8").splitlines()
@@ -78,10 +75,10 @@ def update_config(path: Path) -> None:
     missing = [key for t, key, _ in CANONICAL if t == "key" and key not in file_keys]
 
     if not missing:
-        print("Config is already complete, nothing to do.")
+        print("[ConfigSync] Config is already at the latest version.")
         return
 
-    print(f"Missing keys: {missing}")
+    print(f"[ConfigSync] Missing keys: {missing}")
 
     for key in missing:
         canon_idx = next(i for i, (t, k, _) in enumerate(CANONICAL) if t == "key" and k == key)
@@ -91,10 +88,10 @@ def update_config(path: Path) -> None:
         insert_at = find_insert_position(lines, canon_idx, file_keys)
 
         lines.insert(insert_at, default_line)
-        print(f"  Inserted {key} at line {insert_at + 1}")
+        print(f"[ConfigSync]   Inserted {key} at line {insert_at + 1}")
 
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    print(f"Updated {path}")
+    print(f"[ConfigSync] Updated {path}")
 
 
 if __name__ == "__main__":
