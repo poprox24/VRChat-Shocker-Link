@@ -1,4 +1,4 @@
-# --- NETWORK / Serial Config
+# Serial Config
 SHOCK_PARAMETER: "Shock" # Input the parameter name you want to use for the shock (for example for touches)
 SECOND_SHOCK_PARAMETER: "" # Optional second parameter for stronger shocks, takes only the second half of the curve into account (for example for slaps)
 USE_PISHOCK: True # Set to True if using PiShock, False for OpenShock

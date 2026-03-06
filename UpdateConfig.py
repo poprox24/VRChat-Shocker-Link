@@ -13,7 +13,7 @@ YELLOW = "\033[33m"
 CYAN = "\033[36m"
 
 CANONICAL = [
-    ("comment", None, "# --- NETWORK / Serial Config"),
+    ("comment", None, "# Serial Config"),
     ("key", "SHOCK_PARAMETER", 'SHOCK_PARAMETER: "Shock" # Input the parameter name you want to use for the shock (for example for touches)'),
     ("key", "SECOND_SHOCK_PARAMETER", 'SECOND_SHOCK_PARAMETER: "" # Optional second parameter for stronger shocks, takes only the second half of the curve into account (for example for slaps)'),
     ("key", "USE_PISHOCK", "USE_PISHOCK: True # Set to True if using PiShock, False for OpenShock"),
