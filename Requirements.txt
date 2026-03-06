@@ -5,3 +5,4 @@ numpy
 requests
 pyyaml
 python-osc
+zeroconf
