@@ -1,6 +1,11 @@
 from pathlib import Path
+import logging
 import sys
 import re
+
+RED = "\033[31m"
+YELLOW = "\033[33m"
+CYAN = "\033[36m"
 
 CANONICAL = [
     ("comment", None, "# --- NETWORK / Serial Config"),
@@ -59,10 +64,10 @@ def find_insert_position(file_lines: list[str], canonical_index: int, file_keys:
 
 def update_config(path: Path) -> None:
     if not path.exists():
-        print(f"[ConfigSync] Config not found at {path}, creating fresh.")
+        logging.warning(f"{YELLOW}[ConfigSync] Config not found at {path}, creating fresh.")
         text = "\n".join(line for _, _, line in CANONICAL) + "\n"
         path.write_text(text, encoding="utf-8")
-        print("[ConfigSync] Done.")
+        logging.log(f"{CYAN}[ConfigSync] Done.")
         return
 
     lines = path.read_text(encoding="utf-8").splitlines()
@@ -71,10 +76,10 @@ def update_config(path: Path) -> None:
     missing = [key for t, key, _ in CANONICAL if t == "key" and key not in file_keys]
 
     if not missing:
-        print("[ConfigSync] Config is already at the latest version.")
+        logging.log(f"{CYAN}[ConfigSync] Config is already at the latest version.")
         return
 
-    print(f"[ConfigSync] Missing keys: {missing}")
+    logging.log(f"{YELLOW}[ConfigSync] Missing keys: {missing}")
 
     for key in missing:
         canon_idx = next(i for i, (t, k, _) in enumerate(CANONICAL) if t == "key" and k == key)
@@ -84,10 +89,10 @@ def update_config(path: Path) -> None:
         insert_at = find_insert_position(lines, canon_idx, file_keys)
 
         lines.insert(insert_at, default_line)
-        print(f"[ConfigSync]   Inserted {key} at line {insert_at + 1}")
+        logging.log(f"{CYAN}[ConfigSync]   Inserted {key} at line {insert_at + 1}")
 
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    print(f"[ConfigSync] Updated {path}")
+    logging.log(f"{CYAN}[ConfigSync] Updated {path}")
     
 if __name__ == "__main__":
     target = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("config.yml")

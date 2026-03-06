@@ -24,13 +24,18 @@ logging.basicConfig(
     format='%(message)s'
     )
 
+RED = "\033[31m"
+YELLOW = "\033[33m"
+CYAN = "\033[36m"
+RESET = "\033[0m"
+
 try:
     config = yaml.safe_load(open(config_path)) or {}
 except FileNotFoundError:
-    logging.exception("Could not find config.yml file. Using default config")
+    logging.exception(f"{RED}Could not find config.yml file. Using default config")
     config = {}
 except Exception as e:
-    logging.exception("Could not load config.yml file. Using default config")
+    logging.exception(f"{RED}Could not load config.yml file. Using default config")
     config = {}
 
 # Cleanup
@@ -41,9 +46,9 @@ for item in to_be_deleted:
     if os.path.isdir(item):
         try:
             shutil.rmtree(os.path.abspath(item))
-            print(f"[Janitor] Deleted a no longer needed directory {item}.")
+            logging.info(f"{CYAN}[Janitor] Deleted a no longer needed directory {item}.")
         except Exception as e:
-            print(f"[Janitor] Failed to delete a no longer needed directory {item}, please delete this folder manually.")
+            logging.warning(f"{YELLOW}[Janitor] Failed to delete a no longer needed directory {item}, please delete this folder manually.")
 
 
 def return_list(x):
@@ -198,7 +203,7 @@ def apply_snapshot(snapshot):
             # UI not built yet, ignore: values will sync once widgets exist
             pass
     except Exception:
-        logging.exception("Unable to apply snapshot.")
+        logging.exception(f"{RED}Unable to apply snapshot.")
         pass
     
 def make_snapshot():
@@ -258,8 +263,8 @@ def toggle_temporary_mode():
         })
         render_curve()
 
-        logging.info("Config reloaded on temporary mode disable")
-    logging.info(f"Temporary mode {'enabled' if temporary_mode_disabled.get() else 'disabled'}")
+        logging.info(f"{CYAN}Config reloaded on temporary mode disable")
+    logging.info(f"{CYAN}Temporary mode {'enabled' if temporary_mode_disabled.get() else 'disabled'}")
 
 
 # ~~~      LOAD / SAVE CONFIG      ~~~
@@ -303,7 +308,7 @@ def load_config_from_file():
                 # Apply snapshot
                 apply_snapshot(presets[default_preset_index])
         except Exception as e:
-            logging.exception(f"Config load failed: {e}")
+            logging.exception(f"{RED}Config load failed: {e}")
 
 # Save new config to file
 def save_config():
@@ -328,7 +333,7 @@ def save_config():
         with open(CONFIG_FILE_PATH, "w") as f:
             json.dump(data, f, indent=2)
     except Exception as e:
-        logging.exception(f"Failed to save config: {e}")
+        logging.warning(f"{YELLOW}Failed to save config: {e}")
 
 
 #~~~      PRESETS      ~~~
@@ -339,19 +344,19 @@ def save_preset(index):
     presets[index] = make_snapshot()
     save_config()
     update_preset_buttons_appearance()
-    logging.info(f"Saved preset {index+1}")
+    logging.info(f"{CYAN}Saved preset {index+1}")
 
 def load_preset(index):
     if not (0 <= index < PRESET_COUNT):
         return
     p = presets[index]
     if not p:
-        logging.info(f"No preset saved at slot {index+1}")
+        logging.info(f"{CYAN}No preset saved at slot {index+1}")
         return
     save_undo_snapshot()
     apply_snapshot(p)
     render_curve()
-    logging.info(f"Loaded preset {index+1}")
+    logging.info(f"{CYAN}Loaded preset {index+1}")
 
 def set_default_preset(index):
     global default_preset_index
@@ -360,7 +365,7 @@ def set_default_preset(index):
     default_preset_index = index
     save_config()
     update_preset_buttons_appearance()
-    logging.info(f"Set preset {index+1} as default")
+    logging.info(f"{CYAN}Set preset {index+1} as default")
 
 def update_preset_buttons_appearance():
     try:
@@ -386,15 +391,15 @@ def osc_server():
         dispatch[SECOND_SHOCK_PARAM] = handle_osc_packet
     
     if not dispatch:
-        logging.warning("No OSC parameters setup, please set them up in the config file.")
+        logging.warning(f"{YELLOW}No OSC parameters setup, please set them up in the config file.")
         return
     
     used_params = {param.split("/")[-1] for param in dispatch.keys()}
     zeroconf_instance = start_osc("Shocker Link", dict_to_dispatcher(dispatch), params=used_params)
     if zeroconf_instance is None:
-        logging.error("OSC server failed to start. VRChat integration disabled.")
+        logging.error(f"{RED}OSC server failed to start. VRChat integration disabled.")
         return
-    logging.info(f"Started OSC server for: {list(dispatch.keys())}")
+    logging.info(f"{CYAN}Started OSC server for: {list(dispatch.keys())}")
 
 # Send chat message via OSC with cooldown and auto-clear
 def send_chat_message(message_text, clear_after=True):
@@ -424,9 +429,9 @@ def send_chat_message(message_text, clear_after=True):
                 clear_timer.start()
 
         except Exception as e:
-            logging.exception(f"OSC send failed: {e}")
+            logging.exception(f"{RED}OSC send failed: {e}")
             return
-        logging.info(f"Sent message: {message_text}")
+        logging.info(f"{CYAN}Sent message: {message_text}")
 
 def handle_osc_packet(address, *args):
     global last_trigger_time, trigger_timestamps, state_lock, shock_q
@@ -484,7 +489,7 @@ def connect_serial():
             else:
                 ports = [p.device for p in list_ports.comports()]
 
-            logging.info(f"Available ports: {ports}")
+            logging.info(f"{CYAN}Available ports: {ports}")
 
             for attempt in range(3):
                 for port in ports:
@@ -494,19 +499,19 @@ def connect_serial():
                         resp = ser.read(50)
                         if b"openshock" in resp:
                             ser.flush()
-                            logging.info(f"Connected to serial port {port}")
+                            logging.info(f"{CYAN}Connected to serial port {port}")
                             serial_connection = ser
                             shockers = list(OPENSHOCK_SHOCKER_IDS)
                             return ser
                         else:
                             ser.close()
                     except Exception as e:
-                        logging.exception(f"Failed on {port}: {e}")
-                    logging.warning(f"Connection attempt {attempt+1}/3 for port {port} failed.")
-                logging.warning("Retrying in 3 seconds...")
+                        logging.exception(f"{RED}Failed on {port}: {e}")
+                    logging.warning(f"{YELLOW}Connection attempt {RED}{attempt+1}/3 {YELLOW}for port {RESET}{port} {YELLOW}failed.")
+                logging.warning(f"{YELLOW}Retrying in 3 seconds...")
                 time.sleep(3)
 
-            logging.error("Failed to open serial. Shocks disabled.")
+            logging.error(f"{RED}Failed to open serial. Shocks disabled.")
             serial_connection = None
             return None
     else:
@@ -516,16 +521,16 @@ def connect_serial():
             shockers = info.get("shockers", [])
             first_shocker_id = shockers[0]["id"] if shockers else None
             if first_shocker_id is not None:
-                logging.info(f"Found shocker with ID {first_shocker_id}")
+                logging.info(f"{CYAN}Found shocker with ID {first_shocker_id}")
                 shocker = pishock_api.shocker(first_shocker_id)
                 shockers.append(shocker)
             else:
-                logging.warning("No shockers found.")
+                logging.warning(f"{YELLOW}No shockers found.")
         else:
             for shocker_id in PISHOCK_SHOCKER_IDS:
                 shocker_instance = pishock_api.shocker(shocker_id)
                 shockers.append(shocker_instance)
-                print(f"Created shocker instance for ID {shocker_id}")
+                logging.info(f"{CYAN}Created shocker instance for ID {shocker_id}")
 
 def serial_worker():
     global serial_connection
@@ -544,7 +549,7 @@ def serial_worker():
                     serial_connection.flush()
                     break
             except Exception as e:
-                logging.exception(f"Failed to write to serial (Attempt {attempt+1}/{max_retries}): {e}")
+                logging.exception(f"{RED}Failed to write to serial (Attempt {RESET}{attempt+1}/{max_retries}){RED}: {e}")
                 serial_connection = None
                 time.sleep(0.5)
         else:
@@ -560,29 +565,29 @@ def shocker_worker():
             continue
         
         if not shockers:
-            logging.warning("No shockers configured, dropping shock.")
+            logging.warning(f"{YELLOW}No shockers configured, dropping shock.")
             continue
     
         if not RANDOM_OR_SEQUENTIAL:
             # Random
             chosen_shocker = random.choice(shockers)
-            logging.info(f"Selected shocker: {chosen_shocker}")
+            logging.info(f"{CYAN}Selected shocker: {chosen_shocker}")
         else:
             # Sequential
             last_shocker_index = (last_shocker_index + 1) % len(shockers)
             chosen_shocker = shockers[last_shocker_index]
-            logging.info(f"Selected shocker: {chosen_shocker}")
+            logging.info(f"{CYAN}Selected shocker: {chosen_shocker}")
             
 
         # Using OpenShock
         if not USE_PISHOCK:
             if serial_connection is None or not getattr(serial_connection, "is_open", False):
-                logging.warning("Serial not available. Cannot send shock. Attempting to reconnect...")
+                logging.warning(f"{YELLOW}Serial not available. Cannot send shock. Attempting to reconnect...")
                 connect_serial()
                 if serial_connection and serial_connection.is_open:
                     shock_q.put((intensity_percent, duration_s)) # Re-queue shock
                 else:
-                    logging.error("Reconnect failed, dropping shock.")
+                    logging.error(f"{RED}Reconnect failed, dropping shock.")
                 continue
             # Data for shock
             payload = {
@@ -677,7 +682,7 @@ def finish_text_input(event=None):
         x_val = float(x_str.strip())
         y_val = float(y_str.strip())
     except Exception:
-        logging.warning("Invalid input format")
+        logging.warning(f"{YELLOW}Invalid input format")
         return
     
     # Find nearest point
@@ -861,7 +866,7 @@ def toggle_cooldown_enabled():
     global COOLDOWN_ENABLED
 
     COOLDOWN_ENABLED = not COOLDOWN_ENABLED
-    logging.info(f"Cooldown {'enabled' if COOLDOWN_ENABLED else 'disabled'}")
+    logging.info(f"{CYAN}Cooldown {YELLOW}{'enabled' if COOLDOWN_ENABLED else 'disabled'}")
 
 # --- Preset Logic ---
 preset_rename_widget = None
@@ -1062,7 +1067,7 @@ style = ttk.Style(root)
 try:
     style.theme_use('clam')
 except Exception:
-    logging.exception("Unable to apply theme")
+    logging.exception(f"{RED}Unable to apply theme, UI might look wrong.")
 
 # Configure styles
 style.configure('.', font=('Segoe UI', 11), padding=6)
@@ -1192,7 +1197,7 @@ for child in frame_controls.winfo_children():
     try:
         child.pack_configure(padx=8, pady=6)
     except Exception:
-        logging.exception("Unable to apply padding. UI sizing might be broken.")
+        logging.exception(f"{RED}Unable to apply padding. UI sizing might be broken.")
         pass
 
 # Bind Undo/Redo
@@ -1203,7 +1208,7 @@ root.bind_all('<Control-y>', redo_action)
 # Shutdown logic
 def shutdown():
     save_config()
-    logging.info("Stopping serial server")
+    logging.info(f"{YELLOW}Stopping serial server")
     global serial_connection
     serial_stop.set()
     shocker_stop.set()
@@ -1212,11 +1217,11 @@ def shutdown():
     try:
         if serial_connection and getattr(serial_connection, "is_open", False):
             serial_connection.close()
-            logging.info("Closed serial port")
+            logging.info(f"{YELLOW}Closed serial port")
     except Exception as e:
-        logging.exception(f"Error closing serial: {e}")
+        logging.exception(f"{RED}Error closing serial: {e}")
     if zeroconf_instance:
-        logging.info("Stopping OSC server")
+        logging.info(f"{YELLOW}Stopping OSC server")
         zeroconf_instance.unregister_all_services()
         zeroconf_instance.close()
     root.destroy()

@@ -7,6 +7,10 @@ import socket, threading, json
 from typing import Callable
 import logging
 
+RED = "\033[31m"
+YELLOW = "\033[33m"
+CYAN = "\033[36m"
+
 # Used for sending messages to VRChat
 def vrc_client(vrchat_host) -> SimpleUDPClient:
     return SimpleUDPClient(vrchat_host, 9000)
@@ -25,7 +29,7 @@ def start_osc(name: str, dispatcher: Dispatcher, params: set[str] = None) -> Zer
     try:
         osc_server = BlockingOSCUDPServer(("127.0.0.1", 0), dispatcher)
     except Exception as e:
-        logging.error(f"[VRC OSC] Failed to create OSC server: {e}")
+        logging.error(f"{RED}[VRC OSC] Failed to create OSC server: {e}")
         return None
     
     osc_port = osc_server.server_address[1]
@@ -58,14 +62,14 @@ def start_osc(name: str, dispatcher: Dispatcher, params: set[str] = None) -> Zer
                 root_done = True
             if root_done and host_done:
                 # Stop the HTTP discovery thread after server is discovered by VRChat
-                logging.info("[VRC OSC] Server discovered by VRChat.\n[VRC OSC] Shutting down HTTP discovery server.")
+                logging.info(f"{CYAN}[VRC OSC] Server discovered by VRChat.\n[VRC OSC] Shutting down HTTP discovery server.")
                 threading.Thread(target=httpd.shutdown, daemon=True).start()
         def log_message(self, *a): pass
 
     try:
         httpd = HTTPServer(("127.0.0.1", 0), Handler)
     except Exception as e:
-        logging.error(f"[VRC OSC] Failed to create HTTP server: {e}")
+        logging.error(f"{RED}[VRC OSC] Failed to create HTTP server: {e}")
         osc_server.server_close()
         return None
     
