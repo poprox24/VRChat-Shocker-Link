@@ -39,6 +39,7 @@ CANONICAL = [
     ("key", "VRCHAT_HOST", 'VRCHAT_HOST: "127.0.0.1"'),
     ("key", "OSC_LISTEN_PORT", "OSC_LISTEN_PORT: 9001"),
     ("key", "OSC_SEND_PORT", "OSC_SEND_PORT: 9000"),
+    ("key", "test", "test: 9000"),
 ]
 
 KEY_RE = re.compile(r"^([A-Z_]+)\s*:")
