@@ -21,7 +21,7 @@ def fetch_last_commit_info():
     return js['sha'], js['commit']['author']['name'], js['commit']['message']
 
 def fetch_latest_repo_zip():
-    print(f"[Updatecheck] {CYAN}Updating zip...")
+    print(f"[Updatecheck] {CYAN}Updating zip...{RESET}")
     r = requests.get(f"{API_BASE}/repos/{REPO_OWNER}/{REPO_NAME}/zipball/{REPO_BRANCH}")
     return r.content
 
@@ -46,8 +46,8 @@ if __name__ == "__main__":
         print(f"[Updatecheck] {CYAN}Scripts up to date!{RESET}")
         exit(0)
     
-    print(f"[Updatecheck] {CYAN}Updating to version {hash}!")
-    print(f"[Updatecheck] {CYAN}Commit: {message} - {author}")
+    print(f"[Updatecheck] {CYAN}Updating to version {hash}{RESET}!")
+    print(f"[Updatecheck] {CYAN}Commit: {message} - {author}{RESET}")
 
     update_zip = fetch_latest_repo_zip()
     with zipfile.ZipFile(io.BytesIO(update_zip), 'r') as zf:
