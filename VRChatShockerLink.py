@@ -1,10 +1,9 @@
+from VRC_OSCQuery import vrc_client, dict_to_dispatcher, start_osc
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from serial.tools import list_ports
 import matplotlib.pyplot as plt
-from pishock import SerialAPI
 from queue import Queue, Empty
-from vrchat_oscquery.vrchat_oscquery.threaded import vrc_osc
-from vrchat_oscquery.vrchat_oscquery.common import vrc_client, dict_to_dispatcher
+from pishock import SerialAPI
 from tkinter import ttk
 import tkinter as tk
 import numpy as np
@@ -12,16 +11,17 @@ import threading
 import logging
 import random
 import serial
+import shutil
 import time
 import json
 import yaml
 import os
 
-# Load config from YAML
+# Load config
 config_path = "config.yml"
 logging.basicConfig(
     level=logging.INFO,
-    format= '%(message)s'
+    format='%(message)s'
     )
 
 try:
@@ -32,7 +32,17 @@ except FileNotFoundError:
 except Exception as e:
     logging.exception("Could not load config.yml file. Using default config")
     config = {}
-    
+
+# Cleanup
+to_be_deleted = {
+    "vrchat_oscquery"
+}
+for item in to_be_deleted:
+    if os.path.isdir(item):
+        shutil.rmtree(os.path.abspath(item))
+        print(f"[Janitor] Deleted a no longer needed directory {item}.")
+
+
 def return_list(x):
     if x is None:
         return []
@@ -57,7 +67,6 @@ SHOCK_PARAM = f"/avatar/parameters/{config.get('SHOCK_PARAMETER', None)}" # OSC 
 SECOND_SHOCK_PARAM = f"/avatar/parameters/{config.get('SECOND_SHOCK_PARAMETER', None)}" # Seccond parameter for stronger shocks
 
 VRCHAT_HOST = config.get("VRCHAT_HOST", "127.0.0.1")
-vrc_udp_client = None
 
 # Base config
 BASE_COOLDOWN_S = config.get("BASE_COOLDOWN_S", 2)
@@ -153,6 +162,9 @@ ring_artist = None
 vline_min = None
 vline_max = None
 legend = None
+
+# OSC
+zeroconf_instance = None
 
 # ~~~      UNDO / REDO LOGIC      ~~~
 # Apply a snapshot
@@ -360,9 +372,10 @@ def update_preset_buttons_appearance():
     except Exception:
         pass
 
-
 # ~~~      OSC / SERIAL SETUP      ~~~
 def osc_server():
+    global zeroconf_instance
+    
     dispatch = {}
     if (config.get('SHOCK_PARAMETER')):
         dispatch[SHOCK_PARAM] = handle_osc_packet
@@ -373,8 +386,11 @@ def osc_server():
         logging.warning("No OSC parameters setup, please set them up in the config file.")
         return
     
-    server = vrc_osc("Shocker Link", dict_to_dispatcher(dispatch))
-    threading.Thread(target=server.serve_forever, daemon=True).start
+    used_params = {param.split("/")[-1] for param in dispatch.keys()}
+    zeroconf_instance = start_osc("Shocker Link", dict_to_dispatcher(dispatch), params=used_params)
+    if zeroconf_instance is None:
+        logging.error("OSC server failed to start. VRChat integration disabled.")
+        return
     logging.info(f"Started OSC server for: {list(dispatch.keys())}")
 
 # Send chat message via OSC with cooldown and auto-clear
@@ -837,10 +853,6 @@ def on_mouse_motion(event):
         
     throttled_render()
 
-# Slider release handler
-def on_slider_release(event):
-    save_config()
-
 # Toggle cooldown logic
 def toggle_cooldown_enabled():
     global COOLDOWN_ENABLED
@@ -1188,7 +1200,7 @@ root.bind_all('<Control-y>', redo_action)
 # Shutdown logic
 def shutdown():
     save_config()
-    logging.info("Stopping server")
+    logging.info("Stopping serial server")
     global serial_connection
     serial_stop.set()
     shocker_stop.set()
@@ -1200,6 +1212,10 @@ def shutdown():
             logging.info("Closed serial port")
     except Exception as e:
         logging.exception(f"Error closing serial: {e}")
+    if zeroconf_instance:
+        logging.info("Stopping OSC server")
+        zeroconf_instance.unregister_all_services()
+        zeroconf_instance.close()
     root.destroy()
     os._exit(0)
 
@@ -1215,7 +1231,7 @@ root.protocol("WM_DELETE_WINDOW", shutdown)
 def start_services():
     global vrc_udp_client
     
-    vrc_udp_client = vrc_client()
+    vrc_udp_client = vrc_client(VRCHAT_HOST)
     connect_serial()
     serial_thread.start()
     osc_server_thread.start()
