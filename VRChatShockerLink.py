@@ -46,9 +46,9 @@ for item in to_be_deleted:
     if os.path.isdir(item):
         try:
             shutil.rmtree(os.path.abspath(item))
-            logging.info(f"{CYAN}[Janitor] Deleted a no longer needed directory {item}.")
+            logging.info(f"[Janitor] {CYAN}Deleted a no longer needed directory {item}.")
         except Exception as e:
-            logging.warning(f"{YELLOW}[Janitor] Failed to delete a no longer needed directory {item}, please delete this folder manually.")
+            logging.warning(f"[Janitor] {YELLOW}Failed to delete a no longer needed directory {item}, please delete this folder manually.")
 
 
 def return_list(x):
@@ -263,8 +263,8 @@ def toggle_temporary_mode():
         })
         render_curve()
 
-        logging.info(f"{CYAN}Config reloaded on temporary mode disable")
-    logging.info(f"{CYAN}Temporary mode {'enabled' if temporary_mode_disabled.get() else 'disabled'}")
+        logging.info(f"{RESET}Config reloaded on temporary mode disable")
+    logging.info(f"{RESET}Temporary mode {'enabled' if temporary_mode_disabled.get() else 'disabled'}")
 
 
 # ~~~      LOAD / SAVE CONFIG      ~~~
@@ -344,19 +344,19 @@ def save_preset(index):
     presets[index] = make_snapshot()
     save_config()
     update_preset_buttons_appearance()
-    logging.info(f"{CYAN}Saved preset {index+1}")
+    logging.info(f"{RESET}Saved preset {index+1}")
 
 def load_preset(index):
     if not (0 <= index < PRESET_COUNT):
         return
     p = presets[index]
     if not p:
-        logging.info(f"{CYAN}No preset saved at slot {index+1}")
+        logging.info(f"{RESET}No preset saved at slot {index+1}")
         return
     save_undo_snapshot()
     apply_snapshot(p)
     render_curve()
-    logging.info(f"{CYAN}Loaded preset {index+1}")
+    logging.info(f"{RESET}Loaded preset {index+1}")
 
 def set_default_preset(index):
     global default_preset_index
@@ -365,7 +365,7 @@ def set_default_preset(index):
     default_preset_index = index
     save_config()
     update_preset_buttons_appearance()
-    logging.info(f"{CYAN}Set preset {index+1} as default")
+    logging.info(f"{RESET}Set preset {index+1} as default")
 
 def update_preset_buttons_appearance():
     try:
@@ -399,7 +399,7 @@ def osc_server():
     if zeroconf_instance is None:
         logging.error(f"{RED}OSC server failed to start. VRChat integration disabled.")
         return
-    logging.info(f"{CYAN}Started OSC server for: {list(dispatch.keys())}")
+    logging.info(f"{RESET}Started OSC server for: {list(dispatch.keys())}")
 
 # Send chat message via OSC with cooldown and auto-clear
 def send_chat_message(message_text, clear_after=True):
@@ -431,7 +431,7 @@ def send_chat_message(message_text, clear_after=True):
         except Exception as e:
             logging.exception(f"{RED}OSC send failed: {e}")
             return
-        logging.info(f"{CYAN}Sent message: {message_text}")
+        logging.info(f"{RESET}Sent message: {message_text}")
 
 def handle_osc_packet(address, *args):
     global last_trigger_time, trigger_timestamps, state_lock, shock_q
@@ -489,7 +489,7 @@ def connect_serial():
             else:
                 ports = [p.device for p in list_ports.comports()]
 
-            logging.info(f"{CYAN}Available ports: {ports}")
+            logging.info(f"{RESET}Available ports: {ports}")
 
             for attempt in range(3):
                 for port in ports:
@@ -499,7 +499,7 @@ def connect_serial():
                         resp = ser.read(50)
                         if b"openshock" in resp:
                             ser.flush()
-                            logging.info(f"{CYAN}Connected to serial port {port}")
+                            logging.info(f"{RESET}Connected to serial port {CYAN}{port}")
                             serial_connection = ser
                             shockers = list(OPENSHOCK_SHOCKER_IDS)
                             return ser
@@ -507,7 +507,7 @@ def connect_serial():
                             ser.close()
                     except Exception as e:
                         logging.exception(f"{RED}Failed on {port}: {e}")
-                    logging.warning(f"{YELLOW}Connection attempt {RED}{attempt+1}/3 {YELLOW}for port {RESET}{port} {YELLOW}failed.")
+                    logging.warning(f"{YELLOW}Connection attempt {RESET}{attempt+1}/3 {YELLOW}for port {RESET}{port} {YELLOW}failed.")
                 logging.warning(f"{YELLOW}Retrying in 3 seconds...")
                 time.sleep(3)
 
@@ -521,7 +521,7 @@ def connect_serial():
             shockers = info.get("shockers", [])
             first_shocker_id = shockers[0]["id"] if shockers else None
             if first_shocker_id is not None:
-                logging.info(f"{CYAN}Found shocker with ID {first_shocker_id}")
+                logging.info(f"{RESET}Found shocker with ID {first_shocker_id}")
                 shocker = pishock_api.shocker(first_shocker_id)
                 shockers.append(shocker)
             else:
@@ -530,7 +530,7 @@ def connect_serial():
             for shocker_id in PISHOCK_SHOCKER_IDS:
                 shocker_instance = pishock_api.shocker(shocker_id)
                 shockers.append(shocker_instance)
-                logging.info(f"{CYAN}Created shocker instance for ID {shocker_id}")
+                logging.info(f"{RESET}Created shocker instance for ID {shocker_id}")
 
 def serial_worker():
     global serial_connection
@@ -571,12 +571,12 @@ def shocker_worker():
         if not RANDOM_OR_SEQUENTIAL:
             # Random
             chosen_shocker = random.choice(shockers)
-            logging.info(f"{CYAN}Selected shocker: {chosen_shocker}")
+            logging.info(f"{RESET}Selected shocker: {chosen_shocker}")
         else:
             # Sequential
             last_shocker_index = (last_shocker_index + 1) % len(shockers)
             chosen_shocker = shockers[last_shocker_index]
-            logging.info(f"{CYAN}Selected shocker: {chosen_shocker}")
+            logging.info(f"{RESET}Selected shocker: {chosen_shocker}")
             
 
         # Using OpenShock
@@ -866,7 +866,7 @@ def toggle_cooldown_enabled():
     global COOLDOWN_ENABLED
 
     COOLDOWN_ENABLED = not COOLDOWN_ENABLED
-    logging.info(f"{CYAN}Cooldown {YELLOW}{'enabled' if COOLDOWN_ENABLED else 'disabled'}")
+    logging.info(f"{RESET}Cooldown {YELLOW}{'enabled' if COOLDOWN_ENABLED else 'disabled'}")
 
 # --- Preset Logic ---
 preset_rename_widget = None
