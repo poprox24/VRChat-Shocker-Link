@@ -13,6 +13,7 @@ REPO_BRANCH = "master"
 RED = "\033[31m"
 YELLOW = "\033[33m"
 CYAN = "\033[36m"
+RESET = "\033[0m"
 
 def fetch_last_commit_info():
     r = requests.get(f"{API_BASE}/repos/{REPO_OWNER}/{REPO_NAME}/commits/{REPO_BRANCH}")
@@ -42,10 +43,10 @@ if __name__ == "__main__":
     
     last_info = load_json()
     if last_info['hash'] == hash:
-        print(f"[Updatecheck] {CYAN}Scripts up to date!")
+        print(f"[Updatecheck] {CYAN}Scripts up to date!{RESET}")
         exit(0)
     
-    print(f"[Updatecheck] Updating to version {hash}!")
+    print(f"[Updatecheck] {CYAN}Updating to version {hash}!")
     print(f"[Updatecheck] {CYAN}Commit: {message} - {author}")
 
     update_zip = fetch_latest_repo_zip()
@@ -57,7 +58,7 @@ if __name__ == "__main__":
     
     update_folder = glob.glob(f"./update/{REPO_OWNER}-{REPO_NAME}-*", recursive=True)
     if len(update_folder) < 0:
-        print(f"[Updatecheck] {RED}Can't find extracted zip?")
+        print(f"[Updatecheck] {RED}Can't find extracted zip?{RESET}")
         exit(1)
 
     update_folder = update_folder[0]
@@ -69,5 +70,5 @@ if __name__ == "__main__":
     subprocess.run([sys.executable, "UpdateConfig.py", str(target)], check=True)
 
     save_json(hash, author, message)
-    print(f"[Updatecheck] {CYAN}Update complete!")
+    print(f"[Updatecheck] {CYAN}Update complete!{RESET}")
     

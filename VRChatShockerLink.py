@@ -264,7 +264,7 @@ def toggle_temporary_mode():
         render_curve()
 
         logging.info(f"{RESET}Config reloaded on temporary mode disable")
-    logging.info(f"{RESET}Temporary mode {'enabled' if temporary_mode_disabled.get() else 'disabled'}")
+    logging.info(f"{RESET}Temporary mode {YELLOW}{'enabled' if temporary_mode_disabled.get() else 'disabled'}")
 
 
 # ~~~      LOAD / SAVE CONFIG      ~~~
@@ -399,7 +399,7 @@ def osc_server():
     if zeroconf_instance is None:
         logging.error(f"{RED}OSC server failed to start. VRChat integration disabled.")
         return
-    logging.info(f"{RESET}Started OSC server for: {list(dispatch.keys())}")
+    logging.info(f"{RESET}Started OSC server for: {YELLOW}{list(dispatch.keys())}")
 
 # Send chat message via OSC with cooldown and auto-clear
 def send_chat_message(message_text, clear_after=True):
