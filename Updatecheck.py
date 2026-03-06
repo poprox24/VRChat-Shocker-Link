@@ -1,4 +1,9 @@
 import requests, os, json, zipfile, io, glob, shutil
+from UpdateConfig import update_config
+from pathlib import Path
+import sys
+
+config_path = Path("config.yml")
 
 API_BASE = "https://api.github.com"
 REPO_OWNER = "poprox24"
@@ -11,7 +16,6 @@ CYAN = "\033[36m"
 RESET = "\033[0m"
 
 def fetch_last_commit_info():
-    # /repos/:owner/:repo/commits/master
     r = requests.get(f"{API_BASE}/repos/{REPO_OWNER}/{REPO_NAME}/commits/{REPO_BRANCH}")
     js = r.json()
     return js['sha'], js['commit']['author']['name'], js['commit']['message']
@@ -65,6 +69,9 @@ if __name__ == "__main__":
 
     save_json(hash, author, message)
     print("[Updatecheck] Update complete!")
+    
+    target = Path(sys.argv[1]) if len(sys.argv) > 1 else config_path
+    update_config(target)
             
 
     
