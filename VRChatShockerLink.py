@@ -363,20 +363,19 @@ def update_preset_buttons_appearance():
 
 # ~~~      OSC / SERIAL SETUP      ~~~
 def osc_server():
-    servers = []
+    dispatch = {}
     if (config.get('SHOCK_PARAMETER')):
-        server1 = vrc_osc("Schocker Link First Param", dict_to_dispatcher({f"{SHOCK_PARAM}": handle_osc_packet}))
-        servers.append(("1st", server1))
+        dispatch[SHOCK_PARAM] = handle_osc_packet
     if (config.get('SECOND_SHOCK_PARAMETER')):
-        server2 = vrc_osc("Schocker Link Second Param", dict_to_dispatcher({f"{SECOND_SHOCK_PARAM}": handle_osc_packet}))
-        servers.append(("2nd", server2))
+        dispatch[SECOND_SHOCK_PARAM] = handle_osc_packet
     
-    if not servers:
+    if not dispatch:
         logging.warning("No OSC parameters setup, please set them up in the config file.")
+        return
     
-    for name, srv in servers:
-        threading.Thread(target=srv.serve_forever, daemon=True).start()
-        logging.info(f"Started OSC server: {name}")
+    server = vrc_osc("Shocker Link", dict_to_dispatcher(dispatch))
+    threading.Thread(target=server.serve_forever, daemon=True).start
+    logging.info(f"Started OSC server for: {list(dispatch.keys())}")
 
 # Send chat message via OSC with cooldown and auto-clear
 def send_chat_message(message_text, clear_after=True):
@@ -484,7 +483,8 @@ def connect_serial():
                             ser.close()
                     except Exception as e:
                         logging.exception(f"Failed on {port}: {e}")
-                    logging.warning(f"Reconnection attempt {attempt+1}/3 failed. Retrying in 3 seconds...")
+                    logging.warning(f"Connection attempt {attempt+1}/3 for port {port} failed.")
+                logging.warning("Retrying in 3 seconds...")
                 time.sleep(3)
 
             logging.error("Failed to open serial. Shocks disabled.")
