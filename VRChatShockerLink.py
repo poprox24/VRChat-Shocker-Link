@@ -39,8 +39,11 @@ to_be_deleted = {
 }
 for item in to_be_deleted:
     if os.path.isdir(item):
-        shutil.rmtree(os.path.abspath(item))
-        print(f"[Janitor] Deleted a no longer needed directory {item}.")
+        try:
+            shutil.rmtree(os.path.abspath(item))
+            print(f"[Janitor] Deleted a no longer needed directory {item}.")
+        except Exception as e:
+            print(f"[Janitor] Failed to delete a no longer needed directory {item}, please delete this folder manually.")
 
 
 def return_list(x):
