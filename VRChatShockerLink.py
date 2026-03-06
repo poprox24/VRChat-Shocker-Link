@@ -481,7 +481,7 @@ def shocker_worker():
     global shock_q, serial_connection, shockers, last_shocker_index
     while not shocker_stop.is_set():
         try:
-            intensity_percent, duration_s = shock_q.get(timeout=0.5)
+            intensity_percent, duration_s = shock_q.get(timeout=0.4)
         except Empty:
             continue
     
