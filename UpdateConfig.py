@@ -72,7 +72,7 @@ def update_config(path: Path) -> None:
         logging.warning(f"{YELLOW}[ConfigSync] Config not found at {path}, creating fresh.")
         text = "\n".join(line for _, _, line in CANONICAL) + "\n"
         path.write_text(text, encoding="utf-8")
-        logging.log(f"{CYAN}[ConfigSync] Done.")
+        logging.info(f"{CYAN}[ConfigSync] Done.")
         return
 
     lines = path.read_text(encoding="utf-8").splitlines()
@@ -81,10 +81,10 @@ def update_config(path: Path) -> None:
     missing = [key for t, key, _ in CANONICAL if t == "key" and key not in file_keys]
 
     if not missing:
-        logging.log(f"{CYAN}[ConfigSync] Config is already at the latest version.")
+        logging.info(f"{CYAN}[ConfigSync] Config is already at the latest version.")
         return
 
-    logging.log(f"{YELLOW}[ConfigSync] Missing keys: {missing}")
+    logging.info(f"{YELLOW}[ConfigSync] Missing keys: {missing}")
 
     for key in missing:
         canon_idx = next(i for i, (t, k, _) in enumerate(CANONICAL) if t == "key" and k == key)
@@ -94,10 +94,10 @@ def update_config(path: Path) -> None:
         insert_at = find_insert_position(lines, canon_idx, file_keys)
 
         lines.insert(insert_at, default_line)
-        logging.log(f"{CYAN}[ConfigSync]   Inserted {key} at line {insert_at + 1}")
+        logging.info(f"{CYAN}[ConfigSync]   Inserted {key} at line {insert_at + 1}")
 
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    logging.log(f"{CYAN}[ConfigSync] Updated {path}")
+    logging.info(f"{CYAN}[ConfigSync] Updated {path}")
     
 if __name__ == "__main__":
     target = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("config.yml")
