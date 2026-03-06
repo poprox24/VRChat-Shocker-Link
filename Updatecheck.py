@@ -1,8 +1,9 @@
 import requests, os, json, zipfile, io, glob, shutil
-from VRChatShockerLink import config_path
 from UpdateConfig import update_config
 from pathlib import Path
 import sys
+
+config_path = "config.yml"
 
 API_BASE = "https://api.github.com"
 REPO_OWNER = "poprox24"
