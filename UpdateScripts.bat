@@ -7,3 +7,4 @@ if not exist vrchat_oscquery (
     pip install ./vrchat_oscquery -q
 )
 python Updatecheck.py
+python UpdateConfig.py

@@ -446,7 +446,7 @@ def send_chat_message(message_text, clear_after=True):
     global clear_timer, last_send_time
 
     with send_lock:
-        now = time.time()
+        now = time.perf_counter()
         # Always allow shock messages to bypass message cooldown
         bypass = "⚡" in message_text
 
@@ -575,27 +575,24 @@ def handle_osc_packet(address, *args):
         
 # ~~~      Bezier Curve and Distribution Logic      ~~~
 # Bezier curve interpolation for rendering curve
-def bezier_interpolate(points, steps=100):
+def bezier_interpolate(points, steps):
     p0, p1, p2 = np.array(points[0]), np.array(points[1]), np.array(points[2])
     t = np.linspace(0, 1, steps)[:, None]
     return (1-t)**2 * p0 + 2*(1-t)*t * p1 + t**2 * p2
 
 # Compute intensity distribution from curve
 curve_cache = None
-curve_cache_key = None
 def compute_curve_distribution():
-    global curve_cache, curve_cache_key
+    global curve_cache
     
     # Generate a smooth curve from control points
-    # Honestly this is math I barely understand, but it works
-    
-    key = tuple(UI_CONTROL_POINTS)
-    
-    if curve_cache is not None and key == curve_cache_key:
-        return curve_cache # Same points as last time, skip compute
+    with state_lock:
+        if curve_cache is not None:
+            return curve_cache # Same points as last time, skip compute
+        pts = sorted(UI_CONTROL_POINTS, key=lambda p: p[0])
     
     # Points changed, compute
-    curve = bezier_interpolate(sorted(UI_CONTROL_POINTS, key=lambda p: p[0]), steps=100)
+    curve = bezier_interpolate(pts, steps=100)
     curve = curve[curve[:, 1] > 0]
     xs = np.clip(curve[:, 0].astype(int), 1, 100)
     ys = np.clip(curve[:, 1], 0, 1)
@@ -603,7 +600,6 @@ def compute_curve_distribution():
         ys[:] = 1
         
     curve_cache = (xs, ys)
-    curve_cache_key = key
     return xs, ys
 
 
@@ -629,7 +625,7 @@ def on_ui_view_min_change(val):
         ui_min_scale.set(v)
     UI_VIEW_MIN_PERCENT = max(1, min(99, v))
     min_view_var.set(f"UI View Min ({int(UI_VIEW_MIN_PERCENT)}%)")
-    debounced_render()
+    throttled_render()
 
 # UI view max change
 def on_ui_view_max_change(val):
@@ -640,7 +636,7 @@ def on_ui_view_max_change(val):
         ui_max_scale.set(v)
     UI_VIEW_MAX_PERCENT = min(100, max(2, v))
     max_view_var.set(f"UI View Max ({int(UI_VIEW_MAX_PERCENT)}%)")
-    debounced_render()
+    throttled_render()
 
 # Finish text edit from right-click entry
 def finish_text_edit(event=None):
@@ -791,7 +787,7 @@ def on_mouse_release(event):
 
 # Mouse motion handler
 def on_mouse_motion(event):
-    global dragging_index, render_job, curve_cache
+    global dragging_index, curve_cache
 
     # Ignore if not dragging
     if dragging_index is None or event.inaxes != ax or event.xdata is None:
@@ -838,7 +834,15 @@ def on_mouse_motion(event):
 
         UI_CONTROL_POINTS[1] = (float(new_mid[0]), float(new_mid[1]))
         
-    debounced_render()
+    # Mouse position label
+    if event.inaxes != ax or event.xdata is None or event.ydata is None:
+        mouse_pos_x.set("Intensity: -")
+        mouse_pos_y.set("Weight:    -")
+    else:
+        mouse_pos_x.set(f"Intensity: {event.xdata:0.1f}")
+        mouse_pos_y.set(f"Weight:    {event.ydata:0.2f}")
+        
+    throttled_render()
 
 def build_gradient():
     # Gradient background
@@ -859,7 +863,7 @@ gradient = build_gradient()
 def render_curve():
     ax.clear()
     sorted_pts = sorted(UI_CONTROL_POINTS, key=lambda p: p[0])
-    curve = bezier_interpolate(sorted_pts)
+    curve = bezier_interpolate(sorted_pts, steps=100)
 
     # Background style & grid below plot
     fig.patch.set_facecolor(OUTSIDE_CURVE_BG)
@@ -933,26 +937,19 @@ def render_curve():
 
     canvas.draw_idle()
     
-render_job = None
-def debounced_render():
-    global render_job
-    
-    if render_job:
-        root.after_cancel(render_job)
-    render_job = root.after(2, render_curve)
+last_render = 0
+RENDER_INTERVAL = 0.01  # 10ms at 100fps
+def throttled_render():
+    global last_render
+    now = time.perf_counter()
+
+    if now - last_render >= RENDER_INTERVAL:
+        last_render = now
+        render_curve()
 
 # Slider release handler
 def on_slider_release(event):
     save_config()
-
-# UI mouse position update
-def update_mouse_position_label(event):
-    if event.inaxes != ax or event.xdata is None or event.ydata is None:
-        mouse_pos_x.set("Intensity: -")
-        mouse_pos_y.set("Weight:    -")
-    else:
-        mouse_pos_x.set(f"Intensity: {event.xdata:0.1f}")
-        mouse_pos_y.set(f"Weight:    {event.ydata:0.2f}")
 
 # Toggle cooldown logic
 def toggle_cooldown_enabled():
@@ -1164,7 +1161,6 @@ update_preset_buttons_appearance()
 canvas.mpl_connect("button_press_event", on_mouse_press)
 canvas.mpl_connect("button_release_event", on_mouse_release)
 canvas.mpl_connect("motion_notify_event", on_mouse_motion)
-canvas.mpl_connect("motion_notify_event", update_mouse_position_label)
 
 # MOUSE POSITION LABELS
 mouse_pos_x = tk.StringVar(value="Intensity: -")
@@ -1242,19 +1238,19 @@ root.after(0, lambda: (fig.tight_layout(pad=1.2), canvas.draw_idle()))
 def shutdown():
     save_config()
     logging.info("Stopping server")
-    osc_server_thread.join(timeout=1)
     global serial_connection
+    serial_stop.set()
+    shocker_stop.set()
+    serial_thread.join(timeout=1)
+    shocker_thread.join(timeout=1)
     try:
-        serial_stop.set()
-        shocker_stop.set()
-        serial_thread.join(timeout=1)
-        shocker_thread.join(timeout=1)
         if serial_connection and getattr(serial_connection, "is_open", False):
             serial_connection.close()
             logging.info("Closed serial port")
     except Exception as e:
         logging.exception(f"Error closing serial: {e}")
     root.destroy()
+    os._exit(0)
 
 # Start OSC server thread
 osc_server_thread = threading.Thread(target=osc_server, daemon=True)
@@ -1277,7 +1273,7 @@ def start_services():
     # logging_thread_count_thread.start()
 
 start_services()
-# Start Tkinter main loop
+
 try:
     root.mainloop()
 except KeyboardInterrupt:
