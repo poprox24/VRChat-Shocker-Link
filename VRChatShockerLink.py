@@ -476,10 +476,14 @@ def send_chat_message(message_text, clear_after=True):
 
 last_shocker_index = -1
 shock_q = Queue()
+shocker_stop = threading.Event()
 def shocker_worker():
     global shock_q, serial_connection, shockers, last_shocker_index
-    while True:
-        intensity_percent, duration_s = shock_q.get()
+    while not shocker_stop.is_set():
+        try:
+            intensity_percent, duration_s = shock_q.get(timeout=0.5)
+        except Empty:
+            continue
     
         if not RANDOM_OR_SEQUENTIAL:
             # Random
@@ -521,50 +525,43 @@ def shocker_worker():
 state_lock = threading.Lock()
 def handle_osc_packet(address, *args):
     global last_trigger_time, trigger_timestamps, state_lock, shock_q
+    if not args or args[0] != 1: # Only continue if an OSC packet is received
+        return
 
     # Only accept valid shock parameter
     if (address == SHOCK_PARAM or address == SECOND_SHOCK_PARAM) and args:
         
+        now = time.time()
+        with state_lock:
+            trigger_timestamps[:] = [t for t in trigger_timestamps if now - t <= COOLDOWN_WINDOW_S]
+            trigger_count = len(trigger_timestamps)
+            dynamic_cooldown = min(BASE_COOLDOWN_S + COOLDOWN_FACTOR_S * trigger_count, MAX_COOLDOWN_S)
 
-        # If parameter equals 1, continue
-        param_value = args[0]
-        if param_value == 1:
-            now = time.time()
-            with state_lock:
-                trigger_timestamps[:] = [t for t in trigger_timestamps if now - t <= COOLDOWN_WINDOW_S]
-                trigger_count = len(trigger_timestamps)
-                dynamic_cooldown = min(BASE_COOLDOWN_S + COOLDOWN_FACTOR_S * trigger_count, MAX_COOLDOWN_S)
-
-                # Check cooldown
-                if COOLDOWN_ENABLED and now - last_trigger_time <= dynamic_cooldown:
-                    send_chat_message(f"On cooldown: {round(last_trigger_time - now + dynamic_cooldown, 1)}s")
-                    should_proceed = False
-                    return
-                else:
-                    last_trigger_time = now
-                    trigger_timestamps.append(now)
-                    should_proceed = True
-                
-            if not should_proceed:
+            # Check cooldown
+            if COOLDOWN_ENABLED and now - last_trigger_time <= dynamic_cooldown:
+                send_chat_message(f"On cooldown: {round(last_trigger_time - now + dynamic_cooldown, 1)}s")
                 return
-
-            # Determine shock intensity and duration
-            intensities, weights = compute_curve_distribution()
-
-            if address == SHOCK_PARAM:
-                # For main shock param, use full curve
-                intensity_percent = int(random.choices(intensities, weights=weights, k=1)[0])
             else:
-                # For second shock param, use only the upper half of the curve
-                sorted_indices = np.argsort(intensities)
-                upper_half_indices = sorted_indices[len(sorted_indices)//2:]
-                intensity_percent = int(random.choices(intensities[upper_half_indices], weights=weights[upper_half_indices], k=1)[0])
+                last_trigger_time = now
+                trigger_timestamps.append(now)
 
-            duration_s = round(random.uniform(MIN_SHOCK_DURATION, MAX_SHOCK_DURATION), 1)
+        # Determine shock intensity and duration
+        intensities, weights = compute_curve_distribution()
 
-            # Send shock and chat message
-            shock_q.put((intensity_percent, duration_s))
-            send_chat_message(f"⚡ {intensity_percent}% | {duration_s}s")
+        if address == SHOCK_PARAM:
+            # For main shock param, use full curve
+            intensity_percent = int(random.choices(intensities, weights=weights, k=1)[0])
+        else:
+            # For second shock param, use only the upper half of the curve
+            sorted_indices = np.argsort(intensities)
+            upper_half_indices = sorted_indices[len(sorted_indices)//2:]
+            intensity_percent = int(random.choices(intensities[upper_half_indices], weights=weights[upper_half_indices], k=1)[0])
+
+        duration_s = round(random.uniform(MIN_SHOCK_DURATION, MAX_SHOCK_DURATION), 1)
+
+        # Send shock and chat message
+        shock_q.put((intensity_percent, duration_s))
+        send_chat_message(f"⚡ {intensity_percent}% | {duration_s}s")
             
 # ~~~      Bezier Curve and Distribution Logic      ~~~
 # Bezier curve interpolation for rendering curve
@@ -1199,17 +1196,26 @@ def toggle_temporary_mode():
             except Exception as e:
                 logging.exception(f"Failed to reload config: {e}")
     logging.info(f"Temporary mode {'enabled' if temporary_mode_disabled.get() else 'disabled'}")
+    
+# def log_thread_count():
+#     while True:
+#         time.sleep(5)
+#         logging.info(f"Active threads: {threading.active_count()} (This is a temporary measure to try and fix CPU usage and a memory leak)")
+#         for t in threading.enumerate():
+#             logging.info(f"  {t.name}: {t.is_alive()}")
+
 
 # Shutdown logic
 def shutdown():
     save_config()
     logging.info("Stopping server")
     osc_server_thread.join(timeout=1)
-    shocker_thread.join(timeout=1)
     global serial_connection
     try:
         serial_stop.set()
+        shocker_stop.set()
         serial_thread.join(timeout=1)
+        shocker_thread.join(timeout=1)
         if serial_connection and getattr(serial_connection, "is_open", False):
             serial_connection.close()
             logging.info("Closed serial port")
@@ -1221,6 +1227,8 @@ def shutdown():
 osc_server_thread = threading.Thread(target=osc_server, daemon=True)
 serial_thread = threading.Thread(target=serial_worker, daemon=True)
 shocker_thread = threading.Thread(target=shocker_worker, daemon=True)
+# logging_thread_count_thread = threading.Thread(target=log_thread_count, daemon=True)
+
 
 root.protocol("WM_DELETE_WINDOW", shutdown)
 
@@ -1229,6 +1237,7 @@ def start_services():
     serial_thread.start()
     osc_server_thread.start()
     shocker_thread.start()
+    # logging_thread_count_thread.start()
 
 start_services()
 # Start Tkinter main loop
