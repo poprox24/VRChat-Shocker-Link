@@ -68,7 +68,6 @@ def update_config(path: Path) -> None:
     lines = path.read_text(encoding="utf-8").splitlines()
     file_keys = parse_keys_from_lines(lines)
 
-    canonical_keys = {key for t, key, _ in CANONICAL if t == "key"}
     missing = [key for t, key, _ in CANONICAL if t == "key" and key not in file_keys]
 
     if not missing:
