@@ -1,4 +1,5 @@
 from pathlib import Path
+import sys
 import re
 
 CANONICAL = [
@@ -19,6 +20,7 @@ CANONICAL = [
     ("key", "COOLDOWN_WINDOW_S", "COOLDOWN_WINDOW_S: 30 # How big is the window for the factor (in seconds), will count all boops in this timeframe"),
     ("key", "COOLDOWN_ENABLED", "COOLDOWN_ENABLED: True # Changes default state of cooldown"),
     ("comment", None, "# Style config"),
+    ("key", "PRESET_COUNT", "PRESET_COUNT: 3 # Amount of presets"),
     ("key", "TOUCH_SELECT_THRESHOLD", "TOUCH_SELECT_THRESHOLD: 8 # Touch treshold of the points in the curve"),
     ("key", "TOUCH_MARKER_SIZE", "TOUCH_MARKER_SIZE: 140 # Actual size of points in the curve"),
     ("key", "LINE_WIDTH", "LINE_WIDTH: 3 # Width of the curve line"),
@@ -32,8 +34,6 @@ CANONICAL = [
     ("key", "GRADIENT_RIGHT_COLOR", 'GRADIENT_RIGHT_COLOR: "#6e173b" # Right background gradient color for the curve'),
     ("comment", None, "# Vrchat Config (usually don't need to change)"),
     ("key", "VRCHAT_HOST", 'VRCHAT_HOST: "127.0.0.1"'),
-    ("key", "OSC_LISTEN_PORT", "OSC_LISTEN_PORT: 9001"),
-    ("key", "OSC_SEND_PORT", "OSC_SEND_PORT: 9000"),
 ]
 
 KEY_RE = re.compile(r"^([A-Z_]+)\s*:")
@@ -88,3 +88,7 @@ def update_config(path: Path) -> None:
 
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(f"[ConfigSync] Updated {path}")
+    
+if __name__ == "__main__":
+    target = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("config.yml")
+    update_config(target)

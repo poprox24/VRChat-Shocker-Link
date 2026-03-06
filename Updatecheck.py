@@ -1,6 +1,6 @@
 import requests, os, json, zipfile, io, glob, shutil
-from UpdateConfig import update_config
 from pathlib import Path
+import subprocess
 import sys
 
 config_path = Path("config.yml")
@@ -54,7 +54,6 @@ if __name__ == "__main__":
         for file in zf.filelist:
             if 'config.yml' in file.filename:
                 continue
-            # print(f"[Updatecheck] Extracting {file.filename}")
             zf.extract(file, "update")
     
     update_folder = glob.glob(f"./update/{REPO_OWNER}-{REPO_NAME}-*", recursive=True)
@@ -66,12 +65,10 @@ if __name__ == "__main__":
     shutil.copytree(update_folder, os.getcwd(), dirs_exist_ok=True)
     
     shutil.rmtree(update_folder, ignore_errors=True)
+    
+    target = Path(sys.argv[1]) if len(sys.argv) > 1 else config_path
+    subprocess.run([sys.executable, "UpdateConfig.py", str(target)], check=True)
 
     save_json(hash, author, message)
     print("[Updatecheck] Update complete!")
-    
-    target = Path(sys.argv[1]) if len(sys.argv) > 1 else config_path
-    update_config(target)
-            
-
     

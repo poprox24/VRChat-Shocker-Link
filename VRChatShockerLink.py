@@ -50,13 +50,14 @@ def return_list(x):
 USE_PISHOCK = config.get("USE_PISHOCK", False) # Use PiShock if True, else OpenShock
 OPENSHOCK_SHOCKER_IDS = return_list(config.get("OPENSHOCK_SHOCKER_ID", [None])) # ID for OpenShock shockers
 RANDOM_OR_SEQUENTIAL = config.get("RANDOM_OR_SEQUENTIAL", False)
-VRCHAT_HOST = config.get("VRCHAT_HOST", "127.0.0.1")
+
 OPENSHOCK_SERIAL_BAUDRATE = 115200
 SERIAL_PORT = config.get("serial_port", "")
 SHOCK_PARAM = f"/avatar/parameters/{config.get('SHOCK_PARAMETER', None)}" # OSC parameter to listen for shock trigger
 SECOND_SHOCK_PARAM = f"/avatar/parameters/{config.get('SECOND_SHOCK_PARAMETER', None)}" # Seccond parameter for stronger shocks
 
-client = None
+VRCHAT_HOST = config.get("VRCHAT_HOST", "127.0.0.1")
+vrc_udp_client = None
 
 # Base config
 BASE_COOLDOWN_S = config.get("BASE_COOLDOWN_S", 2)
@@ -88,6 +89,7 @@ PRESET_NORMAL_BG = config.get("PRESET_NORMAL_BG", "#202630")
 PRESET_DEFAULT_BG = config.get("PRESET_DEFAULT_BG", "#2E8A57")
 GRADIENT_LEFT_COLOR = config.get("GRADIENT_LEFT_COLOR", "#42953b")
 GRADIENT_RIGHT_COLOR = config.get("GRADIENT_RIGHT_COLOR", "#6e173b")
+PRESET_COUNT = config.get("PRESET_COUNT", 3)
 
 # ~~~      VARIABLES      ~~~
 # Drag/Edit state
@@ -111,12 +113,254 @@ if USE_PISHOCK:
     shockers = None
     
 # Presets
-PRESET_COUNT = 3
 presets = [None] * PRESET_COUNT
 preset_names = [f"Preset {i+1}" for i in range(PRESET_COUNT)]
 default_preset_index = None
 preset_buttons = []
 preset_save_buttons = []
+
+# Serial
+serial_connection = None        # Shocker Serial Connection
+shockers = []                   # Shocker List
+serial_q = Queue()              # Serial Queue
+serial_stop = threading.Event() # Serial stop for shutdown logic
+
+# Shocker
+last_shocker_index = -1         # Last shocker used for sequential firing
+shock_q = Queue()               # Shocker queue
+shocker_stop = threading.Event()# Shocker stop for shutdown logic
+
+MESSAGE_COOLDOWN = 1.2          # VRC Message Cooldown
+
+# Config for chat message sending
+clear_timer = None              # Timer for clearing messages
+last_send_time = 0              # Time of last message
+send_lock = threading.Lock()    # Prevent multiple threads trying to send messages at once
+
+curve_cache = None              # Caches the curve distribution
+bezier_cache = None
+
+state_lock = threading.Lock()   # State lock
+curve_lock = threading.Lock()
+
+# Render throttling
+last_render = 0                 # Time of last render
+RENDER_INTERVAL = 0.016          # Interval - 16ms/60fps
+
+# UI
+line_artist = None
+marker_artist = None
+ring_artist = None
+vline_min = None
+vline_max = None
+legend = None
+
+# ~~~      UNDO / REDO LOGIC      ~~~
+# Apply a snapshot
+def apply_snapshot(snapshot):
+    global MIN_SHOCK_DURATION, MAX_SHOCK_DURATION, UI_VIEW_MIN_PERCENT, UI_VIEW_MAX_PERCENT, curve_cache
+    
+    UI_CONTROL_POINTS.clear()
+    UI_CONTROL_POINTS.extend(snapshot["curve_points"])
+    MIN_SHOCK_DURATION = snapshot["min_duration"]
+    MAX_SHOCK_DURATION = snapshot["max_duration"]
+    UI_VIEW_MIN_PERCENT = snapshot["ui_min_x"]
+    UI_VIEW_MAX_PERCENT = snapshot["ui_max_x"]
+    
+    invalidate_curve_cache()
+
+    # Update UI elements
+    try:
+        try:
+            min_duration_scale.set(MIN_SHOCK_DURATION)
+            max_duration_scale.set(MAX_SHOCK_DURATION)
+            min_duration_var.set(f"Min Duration ({MIN_SHOCK_DURATION:.1f}s)")
+            max_duration_var.set(f"Max Duration ({MAX_SHOCK_DURATION:.1f}s)")
+            ui_min_scale.set(UI_VIEW_MIN_PERCENT)
+            ui_max_scale.set(UI_VIEW_MAX_PERCENT)
+            min_view_var.set(f"UI View Min ({int(UI_VIEW_MIN_PERCENT)}%)")
+            max_view_var.set(f"UI View Max ({int(UI_VIEW_MAX_PERCENT)}%)")
+        except NameError:
+            # UI not built yet, ignore: values will sync once widgets exist
+            pass
+    except Exception:
+        logging.exception("Unable to apply snapshot.")
+        pass
+    
+def make_snapshot():
+    return {
+        "curve_points": UI_CONTROL_POINTS.copy(),
+        "min_duration": MIN_SHOCK_DURATION,
+        "max_duration": MAX_SHOCK_DURATION,
+        "ui_min_x": UI_VIEW_MIN_PERCENT,
+        "ui_max_x": UI_VIEW_MAX_PERCENT,
+    }
+    
+# Save current state to undo history
+def save_undo_snapshot():
+    # Prepare data
+    snapshot = {
+        "curve_points": UI_CONTROL_POINTS.copy(),
+        "min_duration": MIN_SHOCK_DURATION,
+        "max_duration": MAX_SHOCK_DURATION,
+        "ui_min_x": UI_VIEW_MIN_PERCENT,
+        "ui_max_x": UI_VIEW_MAX_PERCENT,
+    }
+
+    # Push to undo stack
+    undo_history.append(snapshot)
+
+    # Limit history size
+    if len(undo_history) > 50:
+        undo_history.pop(0)
+
+    # Clear redo history
+    redo_history.clear()
+    
+def apply_history(source, dest):
+    if not source:
+        return
+    
+    dest.append(make_snapshot())
+    apply_snapshot(source.pop())
+    render_curve()
+    save_config()
+
+# Undo/Redo Event
+def undo_action(event=None): apply_history(undo_history, redo_history)
+def redo_action(event=None): apply_history(redo_history, undo_history)
+
+def toggle_temporary_mode():
+    global MIN_SHOCK_DURATION, MAX_SHOCK_DURATION, UI_VIEW_MIN_PERCENT, UI_VIEW_MAX_PERCENT, temporary_mode_disabled
+
+    if not temporary_mode_disabled.get():
+        load_config_from_file()
+        apply_snapshot({
+            "curve_points": UI_CONTROL_POINTS.copy(),
+            "min_duration": MIN_SHOCK_DURATION,
+            "max_duration": MAX_SHOCK_DURATION,
+            "ui_min_x": UI_VIEW_MIN_PERCENT,
+            "ui_max_x": UI_VIEW_MAX_PERCENT,
+        })
+        render_curve()
+
+        logging.info("Config reloaded on temporary mode disable")
+    logging.info(f"Temporary mode {'enabled' if temporary_mode_disabled.get() else 'disabled'}")
+
+
+# ~~~      LOAD / SAVE CONFIG      ~~~
+# Attempt to load config, default if not found or error
+def load_config_from_file():
+    global CONFIG_FILE_PATH, UI_CONTROL_POINTS, MIN_SHOCK_DURATION, MAX_SHOCK_DURATION, UI_VIEW_MIN_PERCENT, UI_VIEW_MAX_PERCENT, PRESET_COUNT, default_preset_index, preset_names
+    if os.path.exists(CONFIG_FILE_PATH):
+        try:
+            with open(CONFIG_FILE_PATH, "r") as f:
+                data = json.load(f)
+            loaded_pts = [(float(x), float(y)) for x, y in data.get("curve_points", UI_CONTROL_POINTS)]
+            UI_CONTROL_POINTS.clear()
+            UI_CONTROL_POINTS.extend(loaded_pts)
+            MIN_SHOCK_DURATION = float(data.get("min_duration", MIN_SHOCK_DURATION))
+            MAX_SHOCK_DURATION = float(data.get("max_duration", MAX_SHOCK_DURATION))
+            UI_VIEW_MIN_PERCENT = int(data.get("ui_min_x", data.get("curve_min_x", UI_VIEW_MIN_PERCENT)))
+            UI_VIEW_MAX_PERCENT = int(data.get("ui_max_x", data.get("curve_max_x", UI_VIEW_MAX_PERCENT)))
+
+            # Load presets
+            raw_presets = data.get("presets", [])
+            if isinstance(raw_presets, list):
+                raw_presets = (raw_presets + [None] * PRESET_COUNT)[:PRESET_COUNT]
+            else:
+                raw_presets = [None] * PRESET_COUNT
+            # Ensure each preset has the expected keys
+            for i in range(PRESET_COUNT):
+                p = raw_presets[i]
+                if isinstance(p, dict):
+                    presets[i] = p
+                else:
+                    presets[i] = None
+
+            # Load preset names if present
+            raw_names = data.get("preset_names", None)
+            if isinstance(raw_names, list) and len(raw_names) >= PRESET_COUNT:
+                preset_names = raw_names[:PRESET_COUNT]
+
+            default_idx = data.get("default_preset", None)
+            if isinstance(default_idx, int) and 0 <= default_idx < PRESET_COUNT and presets[default_idx] is not None:
+                default_preset_index = default_idx
+                # Apply snapshot
+                apply_snapshot(presets[default_preset_index])
+        except Exception as e:
+            logging.exception(f"Config load failed: {e}")
+
+# Save new config to file
+def save_config():
+    # Do not save if disabled
+    if temporary_mode_disabled.get():
+        return
+
+    # Prepare data
+    data = {
+        "curve_points": [(round(x, 2), round(y, 2)) for x, y in UI_CONTROL_POINTS],
+        "min_duration": round(MIN_SHOCK_DURATION, 1),
+        "max_duration": round(MAX_SHOCK_DURATION, 1),
+        "ui_min_x": UI_VIEW_MIN_PERCENT,
+        "ui_max_x": UI_VIEW_MAX_PERCENT,
+        "presets": presets,
+        "default_preset": default_preset_index,
+        "preset_names": preset_names
+    }
+
+    # Write to file
+    try:
+        with open(CONFIG_FILE_PATH, "w") as f:
+            json.dump(data, f, indent=2)
+    except Exception as e:
+        logging.exception(f"Failed to save config: {e}")
+
+
+#~~~      PRESETS      ~~~
+def save_preset(index):
+    global presets
+    if not (0 <= index < PRESET_COUNT):
+        return
+    presets[index] = make_snapshot()
+    save_config()
+    update_preset_buttons_appearance()
+    logging.info(f"Saved preset {index+1}")
+
+def load_preset(index):
+    if not (0 <= index < PRESET_COUNT):
+        return
+    p = presets[index]
+    if not p:
+        logging.info(f"No preset saved at slot {index+1}")
+        return
+    save_undo_snapshot()
+    apply_snapshot(p)
+    render_curve()
+    logging.info(f"Loaded preset {index+1}")
+
+def set_default_preset(index):
+    global default_preset_index
+    if not (0 <= index < PRESET_COUNT):
+        return
+    default_preset_index = index
+    save_config()
+    update_preset_buttons_appearance()
+    logging.info(f"Set preset {index+1} as default")
+
+def update_preset_buttons_appearance():
+    try:
+        for i, btn in enumerate(preset_buttons):
+            is_default = (i == default_preset_index)
+            has_data = presets[i] is not None
+            bg = PRESET_DEFAULT_BG if is_default else (PRESET_NORMAL_BG if has_data else "#3a3f46")
+            fg = "white"
+            btn.config(text=preset_names[i], bg=bg, fg=fg)
+            save_btn = preset_save_buttons[i]
+            save_btn.config(state=tk.NORMAL)
+    except Exception:
+        pass
+
 
 # ~~~      OSC / SERIAL SETUP      ~~~
 def osc_server():
@@ -135,8 +379,82 @@ def osc_server():
         threading.Thread(target=srv.serve_forever, daemon=True).start()
         logging.info(f"Started OSC server: {name}")
 
-serial_connection = None
-shockers = []
+# Send chat message via OSC with cooldown and auto-clear
+def send_chat_message(message_text, clear_after=True):
+    global clear_timer, last_send_time
+
+    with send_lock:
+        now = time.perf_counter()
+        # Always allow shock messages to bypass message cooldown
+        bypass = "⚡" in message_text
+
+        # If cooldown is active and bypass is false, skip sending
+        if not bypass and now - last_send_time < MESSAGE_COOLDOWN:
+            return
+        
+        last_send_time = now
+
+        try:
+            vrc_udp_client.send_message("/chatbox/input", (message_text, True, False))
+
+            # Schedule a clear message
+            if clear_after:
+
+                if clear_timer is not None:
+                    clear_timer.cancel()
+                
+                clear_timer = threading.Timer(4, send_chat_message, args=("", False))
+                clear_timer.start()
+
+        except Exception as e:
+            logging.exception(f"OSC send failed: {e}")
+            return
+        logging.info(f"Sent message: {message_text}")
+
+def handle_osc_packet(address, *args):
+    global last_trigger_time, trigger_timestamps, state_lock, shock_q
+    if not args or args[0] != 1: # Only continue if an OSC packet is received
+        return
+
+    # Only accept valid shock parameter
+    if (address == SHOCK_PARAM or address == SECOND_SHOCK_PARAM):
+        
+        now = time.time()
+        with state_lock:
+            trigger_timestamps[:] = [t for t in trigger_timestamps if now - t <= COOLDOWN_WINDOW_S]
+            trigger_count = len(trigger_timestamps)
+            dynamic_cooldown = min(BASE_COOLDOWN_S + COOLDOWN_FACTOR_S * trigger_count, MAX_COOLDOWN_S)
+
+            # Check cooldown
+            if COOLDOWN_ENABLED and now - last_trigger_time <= dynamic_cooldown:
+                cooldown_msg = f"On cooldown: {round(last_trigger_time - now + dynamic_cooldown, 1)}s"
+            else:
+                cooldown_msg = None
+                last_trigger_time = now
+                trigger_timestamps.append(now)
+        
+        if cooldown_msg:
+            send_chat_message(cooldown_msg)
+            return
+
+        # Determine shock intensity and duration
+        intensities, weights = compute_curve_distribution()
+
+        if address == SHOCK_PARAM:
+            # For main shock param, use full curve
+            intensity_percent = int(random.choices(intensities, weights=weights, k=1)[0])
+        else:
+            # For second shock param, use only the upper half of the curve
+            sorted_indices = np.argsort(intensities)
+            upper_half_indices = sorted_indices[len(sorted_indices)//2:]
+            intensity_percent = int(random.choices(intensities[upper_half_indices], weights=weights[upper_half_indices], k=1)[0])
+
+        duration_s = round(random.uniform(MIN_SHOCK_DURATION, MAX_SHOCK_DURATION), 1)
+
+        # Send shock and chat message
+        shock_q.put((intensity_percent, duration_s))
+        send_chat_message(f"⚡ {intensity_percent}% | {duration_s}s")
+
 def connect_serial():
     global serial_connection, pishock_api, shockers
 
@@ -191,8 +509,6 @@ def connect_serial():
                 shockers.append(shocker_instance)
                 print(f"Created shocker instance for ID {shocker_id}")
 
-serial_q = Queue()
-serial_stop = threading.Event()
 def serial_worker():
     global serial_connection
     while not serial_stop.is_set():
@@ -211,272 +527,12 @@ def serial_worker():
                     break
             except Exception as e:
                 logging.exception(f"Failed to write to serial (Attempt {attempt+1}/{max_retries}): {e}")
-                serial_connection = None # Forces reconnect on next iteration
+                serial_connection = None
                 time.sleep(0.5)
         else:
             print("Failed to send shock after retries.")
-            
-# Apply a snapshot
-def apply_snapshot(snapshot):
-    global MIN_SHOCK_DURATION, MAX_SHOCK_DURATION, UI_VIEW_MIN_PERCENT, UI_VIEW_MAX_PERCENT, curve_cache
-    
-    UI_CONTROL_POINTS.clear()
-    UI_CONTROL_POINTS.extend(snapshot["curve_points"])
-    MIN_SHOCK_DURATION = snapshot["min_duration"]
-    MAX_SHOCK_DURATION = snapshot["max_duration"]
-    UI_VIEW_MIN_PERCENT = snapshot["ui_min_x"]
-    UI_VIEW_MAX_PERCENT = snapshot["ui_max_x"]
-    
-    curve_cache = None
 
-    # Update UI elements
-    try:
-        try:
-            min_duration_scale.set(MIN_SHOCK_DURATION)
-            max_duration_scale.set(MAX_SHOCK_DURATION)
-            min_duration_var.set(f"Min Duration ({MIN_SHOCK_DURATION:.1f}s)")
-            max_duration_var.set(f"Max Duration ({MAX_SHOCK_DURATION:.1f}s)")
-            ui_min_scale.set(UI_VIEW_MIN_PERCENT)
-            ui_max_scale.set(UI_VIEW_MAX_PERCENT)
-            min_view_var.set(f"UI View Min ({int(UI_VIEW_MIN_PERCENT)}%)")
-            max_view_var.set(f"UI View Max ({int(UI_VIEW_MAX_PERCENT)}%)")
-        except NameError:
-            # UI not built yet, ignore: values will sync once widgets exist
-            pass
-    except Exception:
-        logging.exception("Unable to apply snapshot.")
-        pass
-    
-def make_snapshot():
-    return {
-        "curve_points": UI_CONTROL_POINTS.copy(),
-        "min_duration": MIN_SHOCK_DURATION,
-        "max_duration": MAX_SHOCK_DURATION,
-        "ui_min_x": UI_VIEW_MIN_PERCENT,
-        "ui_max_x": UI_VIEW_MAX_PERCENT,
-    }
-
-def save_preset(index):
-    global presets
-    if not (0 <= index < PRESET_COUNT):
-        return
-    presets[index] = make_snapshot()
-    save_config()
-    update_preset_buttons_appearance()
-    logging.info(f"Saved preset {index+1}")
-
-def load_preset(index):
-    if not (0 <= index < PRESET_COUNT):
-        return
-    p = presets[index]
-    if not p:
-        logging.info(f"No preset saved at slot {index+1}")
-        return
-    load_undo_snapshot()
-    apply_snapshot(p)
-    render_curve()
-    logging.info(f"Loaded preset {index+1}")
-
-def set_default_preset(index):
-    global default_preset_index
-    if not (0 <= index < PRESET_COUNT):
-        return
-    default_preset_index = index
-    save_config()
-    update_preset_buttons_appearance()
-    logging.info(f"Set preset {index+1} as default")
-
-def update_preset_buttons_appearance():
-    try:
-        for i, btn in enumerate(preset_buttons):
-            is_default = (i == default_preset_index)
-            has_data = presets[i] is not None
-            bg = PRESET_DEFAULT_BG if is_default else (PRESET_NORMAL_BG if has_data else "#3a3f46")
-            fg = "white"
-            btn.config(text=preset_names[i], bg=bg, fg=fg)
-            save_btn = preset_save_buttons[i]
-            save_btn.config(state=tk.NORMAL)
-    except Exception:
-        pass
-
-
-# ~~~      LOAD / SAVE CONFIG      ~~~
-# Attempt to load config, default if not found or error
-if os.path.exists(CONFIG_FILE_PATH):
-    try:
-        with open(CONFIG_FILE_PATH, "r") as f:
-            data = json.load(f)
-        loaded_pts = [(float(x), float(y)) for x, y in data.get("curve_points", UI_CONTROL_POINTS)]
-        UI_CONTROL_POINTS.clear()
-        UI_CONTROL_POINTS.extend(loaded_pts)
-        MIN_SHOCK_DURATION = float(data.get("min_duration", MIN_SHOCK_DURATION))
-        MAX_SHOCK_DURATION = float(data.get("max_duration", MAX_SHOCK_DURATION))
-        UI_VIEW_MIN_PERCENT = int(data.get("ui_min_x", data.get("curve_min_x", UI_VIEW_MIN_PERCENT)))
-        UI_VIEW_MAX_PERCENT = int(data.get("ui_max_x", data.get("curve_max_x", UI_VIEW_MAX_PERCENT)))
-
-        # Load presets
-        raw_presets = data.get("presets", [])
-        if isinstance(raw_presets, list):
-            raw_presets = (raw_presets + [None] * PRESET_COUNT)[:PRESET_COUNT]
-        else:
-            raw_presets = [None] * PRESET_COUNT
-        # Ensure each preset has the expected keys
-        for i in range(PRESET_COUNT):
-            p = raw_presets[i]
-            if isinstance(p, dict):
-                presets[i] = p
-            else:
-                presets[i] = None
-
-        # Load preset names if present
-        raw_names = data.get("preset_names", None)
-        if isinstance(raw_names, list) and len(raw_names) >= PRESET_COUNT:
-            preset_names = raw_names[:PRESET_COUNT]
-
-        default_idx = data.get("default_preset", None)
-        if isinstance(default_idx, int) and 0 <= default_idx < PRESET_COUNT and presets[default_idx] is not None:
-            default_preset_index = default_idx
-            # Apply snapshot
-            apply_snapshot(presets[default_preset_index])
-    except Exception as e:
-        logging.exception(f"Config load failed: {e}")
-
-
-# Save new config to file
-def save_config():
-    # Do not save if disabled
-    if temporary_mode_disabled.get():
-        return
-
-    # Prepare data
-    data = {
-        "curve_points": [(round(x, 2), round(y, 2)) for x, y in UI_CONTROL_POINTS],
-        "min_duration": round(MIN_SHOCK_DURATION, 1),
-        "max_duration": round(MAX_SHOCK_DURATION, 1),
-        "ui_min_x": UI_VIEW_MIN_PERCENT,
-        "ui_max_x": UI_VIEW_MAX_PERCENT,
-        "presets": presets,
-        "default_preset": default_preset_index,
-        "preset_names": preset_names
-    }
-
-    # Write to file
-    try:
-        with open(CONFIG_FILE_PATH, "w") as f:
-            json.dump(data, f, indent=2)
-    except Exception as e:
-        logging.exception(f"Failed to save config: {e}")
-
-
-# ~~~      UNDO / REDO LOGIC      ~~~
-# Save current state to undo history
-def load_undo_snapshot():
-    # Prepare data
-    snapshot = {
-        "curve_points": UI_CONTROL_POINTS.copy(),
-        "min_duration": MIN_SHOCK_DURATION,
-        "max_duration": MAX_SHOCK_DURATION,
-        "ui_min_x": UI_VIEW_MIN_PERCENT,
-        "ui_max_x": UI_VIEW_MAX_PERCENT,
-    }
-
-    # Push to undo stack
-    undo_history.append(snapshot)
-
-    # Limit history size
-    if len(undo_history) > 50:
-        undo_history.pop(0)
-
-    # Clear redo history
-    redo_history.clear()
-
-# Undo action
-def undo_action(event=None):
-    # If there is nothing to undo, return
-    if not undo_history:
-        return
-    
-    # Push current snapshot to redo history
-    redo_history.append({
-        "curve_points": UI_CONTROL_POINTS.copy(),
-        "min_duration": MIN_SHOCK_DURATION,
-        "max_duration": MAX_SHOCK_DURATION,
-        "ui_min_x": UI_VIEW_MIN_PERCENT,
-        "ui_max_x": UI_VIEW_MAX_PERCENT,
-    })
-
-    # Remove last undo snapshot and apply it
-    snapshot = undo_history.pop()
-    apply_snapshot(snapshot)
-    render_curve()
-    save_config()
-
-# Redo action
-def redo_action(event=None):
-    if not redo_history:
-        return
-    
-    # Push current snapshot to undo history
-    undo_history.append({
-        "curve_points": UI_CONTROL_POINTS.copy(),
-        "min_duration": MIN_SHOCK_DURATION,
-        "max_duration": MAX_SHOCK_DURATION,
-        "ui_min_x": UI_VIEW_MIN_PERCENT,
-        "ui_max_x": UI_VIEW_MAX_PERCENT,
-    })
-
-    # Remove last redo snapshot and apply it
-    snap = redo_history.pop()
-    apply_snapshot(snap)
-    render_curve()
-    save_config()
-
-
-# ~~~      MESSAGE SENDING LOGIC      ~~~
-# Config for chat message sending
-clear_timer = None
-last_send_time = 0
-send_lock = threading.Lock()
-MESSAGE_COOLDOWN = 1.2
-
-# Send chat message via OSC with cooldown and auto-clear
-def send_chat_message(message_text, clear_after=True):
-    global clear_timer, last_send_time
-
-    with send_lock:
-        now = time.perf_counter()
-        # Always allow shock messages to bypass message cooldown
-        bypass = "⚡" in message_text
-
-        # If cooldown is active and bypass is false, skip sending
-        if not bypass and now - last_send_time < MESSAGE_COOLDOWN:
-            return
-        
-        # Update last send time
-        last_send_time = now
-
-        try:
-            client.send_message("/chatbox/input", (message_text, True, False))
-
-            # Schedule a clear if a message is sent
-            if clear_after:
-
-                # If a new message is sent, cancel any existing clear timer
-                if clear_timer is not None:
-                    clear_timer.cancel()
-                
-                # Schedule a new clear timer
-                clear_timer = threading.Timer(4, send_chat_message, args=("", False))
-                clear_timer.start()
-
-        except Exception as e:
-            logging.exception(f"OSC send failed: {e}")
-            return
-        logging.info(f"Sent message: {message_text}")
-
-last_shocker_index = -1
-shock_q = Queue()
-shocker_stop = threading.Event()
+#~~~      SHOCKER LOGIC      ~~~
 def shocker_worker():
     global shock_q, serial_connection, shockers, last_shocker_index
     while not shocker_stop.is_set():
@@ -523,73 +579,23 @@ def shocker_worker():
         else:
             # Using PiShock  
             chosen_shocker.shock(duration=round(float(duration_s), 1), intensity=int(intensity_percent))
-
-# ~~~      OSC MESSAGE HANDLER      ~~~
-# Handle incoming OSC packets
-state_lock = threading.Lock()
-def handle_osc_packet(address, *args):
-    global last_trigger_time, trigger_timestamps, state_lock, shock_q
-    if not args or args[0] != 1: # Only continue if an OSC packet is received
-        return
-
-    # Only accept valid shock parameter
-    if (address == SHOCK_PARAM or address == SECOND_SHOCK_PARAM):
         
-        now = time.time()
-        with state_lock:
-            trigger_timestamps[:] = [t for t in trigger_timestamps if now - t <= COOLDOWN_WINDOW_S]
-            trigger_count = len(trigger_timestamps)
-            dynamic_cooldown = min(BASE_COOLDOWN_S + COOLDOWN_FACTOR_S * trigger_count, MAX_COOLDOWN_S)
-
-            # Check cooldown
-            if COOLDOWN_ENABLED and now - last_trigger_time <= dynamic_cooldown:
-                cooldown_msg = f"On cooldown: {round(last_trigger_time - now + dynamic_cooldown, 1)}s"
-            else:
-                cooldown_msg = None
-                last_trigger_time = now
-                trigger_timestamps.append(now)
         
-        if cooldown_msg:
-            send_chat_message(cooldown_msg)
-            return
-
-        # Determine shock intensity and duration
-        intensities, weights = compute_curve_distribution()
-
-        if address == SHOCK_PARAM:
-            # For main shock param, use full curve
-            intensity_percent = int(random.choices(intensities, weights=weights, k=1)[0])
-        else:
-            # For second shock param, use only the upper half of the curve
-            sorted_indices = np.argsort(intensities)
-            upper_half_indices = sorted_indices[len(sorted_indices)//2:]
-            intensity_percent = int(random.choices(intensities[upper_half_indices], weights=weights[upper_half_indices], k=1)[0])
-
-        duration_s = round(random.uniform(MIN_SHOCK_DURATION, MAX_SHOCK_DURATION), 1)
-
-        # Send shock and chat message
-        shock_q.put((intensity_percent, duration_s))
-        send_chat_message(f"⚡ {intensity_percent}% | {duration_s}s")
-        
-# ~~~      Bezier Curve and Distribution Logic      ~~~
-# Bezier curve interpolation for rendering curve
+# ~~~      BEZIER CURVE AND DISTRIBUTION LOGIC      ~~~
 def bezier_interpolate(points, steps):
     p0, p1, p2 = np.array(points[0]), np.array(points[1]), np.array(points[2])
     t = np.linspace(0, 1, steps)[:, None]
     return (1-t)**2 * p0 + 2*(1-t)*t * p1 + t**2 * p2
 
-# Compute intensity distribution from curve
-curve_cache = None
 def compute_curve_distribution():
     global curve_cache
     
     # Generate a smooth curve from control points
-    with state_lock:
+    with curve_lock:
         if curve_cache is not None:
             return curve_cache # Same points as last time, skip compute
         pts = sorted(UI_CONTROL_POINTS, key=lambda p: p[0])
     
-    # Points changed, compute
     curve = bezier_interpolate(pts, steps=100)
     curve = curve[curve[:, 1] > 0]
     xs = np.clip(curve[:, 0].astype(int), 1, 100)
@@ -602,19 +608,16 @@ def compute_curve_distribution():
 
 
 # ~~~      UI EVENT HANDLERS      ~~~
-# Min duration change
 def on_min_duration_change(val):
     global MIN_SHOCK_DURATION
     MIN_SHOCK_DURATION = float(val)
     min_duration_var.set(f"Min Duration ({float(val):.1f}s)")
 
-# Max duration change
 def on_max_duration_change(val):
     global MAX_SHOCK_DURATION
     MAX_SHOCK_DURATION = float(val)
     max_duration_var.set(f"Max Duration ({MAX_SHOCK_DURATION:.1f}s)")
 
-# UI view min change
 def on_ui_view_min_change(val):
     global UI_VIEW_MIN_PERCENT, UI_VIEW_MAX_PERCENT
     v = int(float(val))
@@ -625,7 +628,6 @@ def on_ui_view_min_change(val):
     min_view_var.set(f"UI View Min ({int(UI_VIEW_MIN_PERCENT)}%)")
     throttled_render()
 
-# UI view max change
 def on_ui_view_max_change(val):
     global UI_VIEW_MIN_PERCENT, UI_VIEW_MAX_PERCENT
     v = int(float(val))
@@ -636,21 +638,17 @@ def on_ui_view_max_change(val):
     max_view_var.set(f"UI View Max ({int(UI_VIEW_MAX_PERCENT)}%)")
     throttled_render()
 
-# Finish text edit from right-click entry
-def finish_text_edit(event=None):
+def finish_text_input(event=None):
     global right_click_input_widget, highlight_index, curve_cache
 
-    # If no widget, return
     if not right_click_input_widget:
         return
     
-    # Parse input
     user_input = right_click_input_widget.get()
     right_click_input_widget.destroy()
     right_click_input_widget = None
     highlight_index = None
 
-    # Validate input
     if not user_input:
         render_curve()
         return
@@ -671,11 +669,11 @@ def finish_text_edit(event=None):
     nearest = int(np.argmin(dists))
 
     # Save snapshot before change
-    load_undo_snapshot()
+    save_undo_snapshot()
 
     # Update point and re-render
     UI_CONTROL_POINTS[nearest] = (x_val, y_val / 100)
-    curve_cache = None
+    invalidate_curve_cache()
     save_config()
     render_curve()
 
@@ -722,7 +720,7 @@ def on_mouse_press(event):
                 
         def on_finish(event):
             if not right_click_input_widget.get() == placeholder_text:
-                finish_text_edit()
+                finish_text_input()
             else:
                 right_click_input_widget.destroy()
             
@@ -748,7 +746,7 @@ def on_mouse_press(event):
         dragging_index = nearest
 
         # Save snapshot before change
-        load_undo_snapshot()
+        save_undo_snapshot()
 
         # Logic for the middle point follow
         # Average the first and last points to stay relatively centered
@@ -773,14 +771,13 @@ def on_mouse_press(event):
                 drag_context["t"] = t
                 drag_context["perp_mag"] = perp_mag
 
-
 # Mouse release handler
 def on_mouse_release(event):
     global dragging_index, curve_cache
     
     dragging_index = None
     drag_context.clear()
-    curve_cache = None
+    invalidate_curve_cache()
     save_config()
 
 # Mouse motion handler
@@ -797,10 +794,9 @@ def on_mouse_motion(event):
 
     # Logic for middle point
     UI_CONTROL_POINTS[dragging_index] = (new_x, new_y)
-    curve_cache = None # Update cache while dragging the mouse
 
     # If dragging an endpoint and we have stored start positions, move middle relative to them
-    if len(UI_CONTROL_POINTS) == 3 and dragging_index in (0, 2) and "start_endpoint_pos" in drag_context:
+    if dragging_index in (0, 2) and "start_endpoint_pos" in drag_context:
         x0, y0 = drag_context["start_endpoint_pos"]
         mx0, my0 = drag_context["start_middle_pos"]
 
@@ -808,7 +804,7 @@ def on_mouse_motion(event):
         dy = new_y - y0
 
         UI_CONTROL_POINTS[1] = (mx0 + dx, my0 + dy)
-        curve_cache = None # Update cache after middle point updates
+        invalidate_curve_cache() # Update cache after middle point updates
 
     # If we have a follow mode, adjust middle point accordingly
     # Average the first and last points to stay relatively centered
@@ -842,109 +838,6 @@ def on_mouse_motion(event):
         
     throttled_render()
 
-def build_gradient():
-    # Gradient background
-    def hex_to_rgb01(h):
-        h = h.lstrip('#')
-        return tuple(int(h[i:i+2], 16) / 255.0 for i in (0, 2, 4))
-
-    left_rgb = np.array(hex_to_rgb01(GRADIENT_LEFT_COLOR))
-    right_rgb = np.array(hex_to_rgb01(GRADIENT_RIGHT_COLOR))
-
-    ncols = 512
-    row = np.linspace(left_rgb, right_rgb, ncols)[None, :, :]
-    return np.repeat(row, 40, axis=0)
-
-gradient = build_gradient()
-
-# Curve renderer
-def render_curve():
-    ax.clear()
-    sorted_pts = sorted(UI_CONTROL_POINTS, key=lambda p: p[0])
-    curve = bezier_interpolate(sorted_pts, steps=100)
-
-    # Background style & grid below plot
-    fig.patch.set_facecolor(OUTSIDE_CURVE_BG)
-    ax.set_facecolor(INSIDE_CURVE_BG)
-    ax.set_axisbelow(True)
-
-    ax.imshow(gradient, extent=(0, 100, 0, 1), aspect='auto', origin='lower', zorder=0)
-
-    # Draw curve (above gradient)
-    ax.plot(curve[:, 0], curve[:, 1], linewidth=LINE_WIDTH, zorder=4)
-
-    # Marker points
-    xs, ys = zip(*sorted_pts)
-    ax.scatter(xs, ys, zorder=6, s=TOUCH_MARKER_SIZE, edgecolors='k',
-               marker="o", linewidth=0.6, facecolor=MARKER_COLOR)
-
-    # Selected ring
-    try:
-        if dragging_index is not None and 0 <= dragging_index < len(sorted_pts):
-            sx, sy = UI_CONTROL_POINTS[dragging_index]
-            ax.scatter([sx], [sy], s=TOUCH_MARKER_SIZE * 1.8, facecolors="none",
-                       edgecolors='white', marker="o", linewidths=1.4, alpha=0.45, zorder=7)
-        if highlight_index is not None:
-            sx, sy = UI_CONTROL_POINTS[highlight_index]
-            ax.scatter([sx], [sy], s=TOUCH_MARKER_SIZE * 1.8, facecolors="none",
-                       edgecolors='white', marker="o", linewidths=1.4, alpha=0.45, zorder=7)
-    except Exception:
-        logging.exception("Unable to draw ring around selected point. (You can ignore this error)")
-        pass
-
-    # Min/Max lines
-    min_x, min_y = sorted_pts[0]
-    max_x, max_y = sorted_pts[-1]
-    ax.axvline(min_x, color='#5eead4', linestyle='--',
-               label=f"Min {int(min_x)}% with {min_y *10:.1f} weight", linewidth=1, zorder=2)
-    ax.axvline(max_x, color='#fbbf24', linestyle='--',
-               label=f"Max {int(max_x)}% with {max_y * 10:.1f} weight", linewidth=1, zorder=2)
-
-    # Labels & styling
-    ax.set_title("Intensity Probability Curve", fontsize=14, color=LABEL_COLOR, pad=8)
-    ax.set_xlabel("Intensity (%)", fontsize=12, color=LABEL_COLOR)
-    ax.set_ylabel("Weight", fontsize=12, color=LABEL_COLOR)
-    ax.set_yticks(np.linspace(0, 1, 11))
-    ax.set_yticklabels([f"{v:.1f}" for v in np.linspace(0, 1, 11)], color=LABEL_COLOR)
-    ax.tick_params(axis='x', colors=LABEL_COLOR)
-    ax.tick_params(axis='y', colors=LABEL_COLOR)
-
-    # Grid locked to fives (0,5,10,15,...100), clipped to current UI view
-    xmin = UI_VIEW_MIN_PERCENT
-    xmax = UI_VIEW_MAX_PERCENT
-    all_fives = np.arange(0, 101, 5)
-    major_xticks = all_fives[(all_fives >= xmin) & (all_fives <= xmax)]
-
-    # Fallback if no fives in range (keeps axis readable)
-    if major_xticks.size == 0:
-        major_xticks = np.array([xmin, xmax])
-
-    ax.set_xticks(major_xticks)
-    ax.grid(which='major', linestyle='-', linewidth=0.9, alpha=0.6, zorder=3)
-
-    # Legend
-    legend = ax.legend(loc='upper right', bbox_to_anchor=(1.02, 1.0), framealpha=0.9, fontsize=10)
-    if legend:
-        legend.get_frame().set_facecolor(OUTSIDE_CURVE_BG)
-        legend.get_frame().set_edgecolor('#222')
-        for text in legend.get_texts():
-            text.set_color(LABEL_COLOR)
-
-    ax.set_xlim(UI_VIEW_MIN_PERCENT, UI_VIEW_MAX_PERCENT)
-    ax.set_ylim(0, 1)
-
-    canvas.draw_idle()
-    
-last_render = 0
-RENDER_INTERVAL = 0.01  # 10ms at 100fps
-def throttled_render():
-    global last_render
-    now = time.perf_counter()
-
-    if now - last_render >= RENDER_INTERVAL:
-        last_render = now
-        render_curve()
-
 # Slider release handler
 def on_slider_release(event):
     save_config()
@@ -959,7 +852,6 @@ def toggle_cooldown_enabled():
 # --- Preset Logic ---
 preset_rename_widget = None
 preset_rename_index = None
-
 def start_preset_rename(event, index):
     """Create an inline Entry at the mouse pointer to rename preset `index`."""
     global preset_rename_widget, preset_rename_index
@@ -999,7 +891,6 @@ def start_preset_rename(event, index):
     preset_rename_widget.bind("<Escape>", _cancel)
 
 def finish_preset_rename():
-    """Read entry, apply name, save, destroy entry."""
     global preset_rename_widget, preset_rename_index
     if preset_rename_widget is None or preset_rename_index is None:
         return
@@ -1033,6 +924,120 @@ def cancel_preset_rename():
     preset_rename_index = None
 
 
+# ~~~      UI CONSTRUCTION      ~~~
+def build_gradient():
+    # Gradient background
+    def hex_to_rgb01(h):
+        h = h.lstrip('#')
+        return tuple(int(h[i:i+2], 16) / 255.0 for i in (0, 2, 4))
+
+    left_rgb = np.array(hex_to_rgb01(GRADIENT_LEFT_COLOR))
+    right_rgb = np.array(hex_to_rgb01(GRADIENT_RIGHT_COLOR))
+
+    ncols = 512
+    row = np.linspace(left_rgb, right_rgb, ncols)[None, :, :]
+    return np.repeat(row, 40, axis=0)
+
+gradient = build_gradient()
+
+def init_plot():
+    global line_artist, marker_artist, ring_artist, vline_min, vline_max, legend
+    
+    ax.imshow(gradient, extent=(0, 100, 0, 1), aspect='auto', origin='lower', zorder=0)
+    
+    # Create artists with dummy data, save references
+    line_artist, = ax.plot([], [], linewidth = LINE_WIDTH, zorder = 4)
+    marker_artist = ax.scatter([], [], zorder=6, s=TOUCH_MARKER_SIZE, edgecolors='k', marker="o", linewidth=0.6, facecolor=MARKER_COLOR)
+    ring_artist = ax.scatter([], [], s=TOUCH_MARKER_SIZE * 1.8, facecolors="none", edgecolors='white', marker="o", linewidths=1.4, alpha=0.45, zorder=7)
+    vline_min = ax.axvline(0, color='#5eead4', linestyle='--', linewidth=1, zorder=2)
+    vline_max = ax.axvline(0, color='#fbbf24', linestyle='--', linewidth=1, zorder=2)
+
+    # Static stuff
+    fig.patch.set_facecolor(OUTSIDE_CURVE_BG)
+    ax.set_facecolor(INSIDE_CURVE_BG)
+    ax.set_axisbelow(True)
+    ax.set_title("Intensity Probability Curve", fontsize=14, color=LABEL_COLOR, pad=8)
+    ax.set_xlabel("Intensity (%)", fontsize=12, color=LABEL_COLOR)
+    ax.set_ylabel("Weight", fontsize=12, color=LABEL_COLOR)
+    ax.set_yticks(np.linspace(0, 1, 11))
+    ax.set_yticklabels([f"{v:.1f}" for v in np.linspace(0, 1, 11)], color=LABEL_COLOR)
+    ax.tick_params(axis='x', colors=LABEL_COLOR)
+    ax.tick_params(axis='y', colors=LABEL_COLOR)
+    ax.set_ylim(0, 1)
+    ax.grid(which='major', linestyle='-', linewidth=0.9, alpha=0.6, zorder=3)
+    
+    sorted_pts = sorted(UI_CONTROL_POINTS, key=lambda p: p[0])
+    min_x, min_y = sorted_pts[0]
+    max_x, max_y = sorted_pts[-1]
+    vline_min.set_label(f"Min {int(min_x)}% with {min_y*10:.1f} weight")
+    vline_max.set_label(f"Max {int(max_x)}% with {max_y*10:.1f} weight")
+    
+    legend = ax.legend(loc='upper right', bbox_to_anchor=(1.02, 1.0), framealpha=0.9, fontsize=10)
+    legend.get_frame().set_facecolor(OUTSIDE_CURVE_BG)
+    legend.get_frame().set_edgecolor('#222')
+    for text in legend.get_texts():
+        text.set_color(LABEL_COLOR)
+
+def render_curve():
+    global bezier_cache
+    
+    sorted_pts = sorted(UI_CONTROL_POINTS, key=lambda p: p[0])
+    
+    if bezier_cache is None or bezier_cache[0] != sorted_pts:
+        bezier_cache = (
+            sorted_pts,
+            bezier_interpolate(sorted_pts, steps = 100)
+        )
+    curve = bezier_cache[1]
+
+    # Update curve line
+    line_artist.set_data(curve[:, 0], curve[:, 1])
+
+    # Update markers
+    xs, ys = zip(*sorted_pts)
+    marker_artist.set_offsets(np.column_stack([xs, ys]))
+
+    # Update selection ring
+    active = dragging_index if dragging_index is not None else highlight_index
+    if active is not None:
+        sx, sy = UI_CONTROL_POINTS[active]
+        ring_artist.set_offsets([[sx, sy]])
+        ring_artist.set_visible(True)
+    else:
+        ring_artist.set_visible(False)
+
+    # Update vlines
+    min_x, min_y = sorted_pts[0]
+    max_x, max_y = sorted_pts[-1]
+    vline_min.set_xdata([min_x, min_x])
+    vline_max.set_xdata([max_x, max_x])
+    vline_min.set_label(f"Min {int(min_x)}% with {min_y*10:.1f} weight")
+    vline_max.set_label(f"Max {int(max_x)}% with {max_y*10:.1f} weight")
+
+    # Rebuild when view range changes
+    ax.set_xlim(UI_VIEW_MIN_PERCENT, UI_VIEW_MAX_PERCENT)
+    all_fives = np.arange(0, 101, 5)
+    major_xticks = all_fives[(all_fives >= UI_VIEW_MIN_PERCENT) & (all_fives <= UI_VIEW_MAX_PERCENT)]
+    ax.set_xticks(major_xticks if major_xticks.size else [UI_VIEW_MIN_PERCENT, UI_VIEW_MAX_PERCENT])
+    
+    legend.texts[0].set_text(f"Min {int(min_x)}% with {min_y*10:.1f} weight")
+    legend.texts[1].set_text(f"Max {int(max_x)}% with {max_y*10:.1f} weight")
+
+    canvas.draw_idle() 
+
+def throttled_render():
+    global last_render
+    now = time.perf_counter()
+
+    if now - last_render >= RENDER_INTERVAL:
+        last_render = now
+        render_curve()
+        
+def invalidate_curve_cache():
+    global curve_cache, bezier_cache
+    curve_cache = None
+    bezier_cache = None
+
 # ~~~      TKINTER UI SETUP      ~~~
 root = tk.Tk()
 root.title("Shock Control GUI")
@@ -1064,7 +1069,7 @@ ttk.Label(frame_controls, textvariable=min_duration_var).pack()
 min_duration_scale = ttk.Scale(frame_controls, from_=0.1, to=5, orient=tk.HORIZONTAL, command=on_min_duration_change)
 min_duration_scale.set(MIN_SHOCK_DURATION)
 min_duration_scale.pack(fill=tk.X)
-min_duration_scale.bind("<ButtonPress-1>", lambda e: load_undo_snapshot())
+min_duration_scale.bind("<ButtonPress-1>", lambda e: save_undo_snapshot())
 min_duration_scale.bind("<ButtonRelease-1>", lambda e: save_config())
 
 # MAX DURATION SLIDER
@@ -1073,7 +1078,7 @@ ttk.Label(frame_controls, textvariable=max_duration_var).pack()
 max_duration_scale = ttk.Scale(frame_controls, from_=0.1, to=5, orient=tk.HORIZONTAL, command=on_max_duration_change)
 max_duration_scale.set(MAX_SHOCK_DURATION)
 max_duration_scale.pack(fill=tk.X)
-max_duration_scale.bind("<ButtonPress-1>", lambda e: load_undo_snapshot())
+max_duration_scale.bind("<ButtonPress-1>", lambda e: save_undo_snapshot())
 max_duration_scale.bind("<ButtonRelease-1>", lambda e: save_config())
 
 # PLOT FRAME
@@ -1085,6 +1090,8 @@ fig, ax = plt.subplots(figsize=(5, 4))
 canvas = FigureCanvasTkAgg(fig, master=frame_plot)
 canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
+init_plot()
+
 minmax_frame = ttk.Frame(frame_plot)
 minmax_frame.pack(fill=tk.X, pady=5)
 
@@ -1094,7 +1101,7 @@ ttk.Label(minmax_frame, text="UI View Min %", textvariable=min_view_var).pack(an
 ui_min_scale = ttk.Scale(minmax_frame, from_=1, to=99, orient=tk.HORIZONTAL, command=on_ui_view_min_change)
 ui_min_scale.set(UI_VIEW_MIN_PERCENT)
 ui_min_scale.pack(fill=tk.X)
-ui_min_scale.bind("<ButtonPress-1>", lambda e: load_undo_snapshot())
+ui_min_scale.bind("<ButtonPress-1>", lambda e: save_undo_snapshot())
 ui_min_scale.bind("<ButtonRelease-1>", lambda e: save_config())
 
 # UI VIEW MAX SLIDER
@@ -1103,7 +1110,7 @@ ttk.Label(minmax_frame, text="UI View Max %", textvariable=max_view_var).pack(an
 ui_max_scale = ttk.Scale(minmax_frame, from_=2, to=100, orient=tk.HORIZONTAL, command=on_ui_view_max_change)
 ui_max_scale.set(UI_VIEW_MAX_PERCENT)
 ui_max_scale.pack(fill=tk.X)
-ui_max_scale.bind("<ButtonPress-1>", lambda e: load_undo_snapshot())
+ui_max_scale.bind("<ButtonPress-1>", lambda e: save_undo_snapshot())
 ui_max_scale.bind("<ButtonRelease-1>", lambda e: save_config())
 
 label_temporary_mode = tk.Label(root, text="Temporary Mode", bg=BACKGROUND_COLOR, fg='white')
@@ -1131,7 +1138,7 @@ if config.get('SECOND_SHOCK_PARAMETER'):
     second_test_shock = ttk.Button(buttons_frame, text="Test 2nd Param", command=lambda: handle_osc_packet(SECOND_SHOCK_PARAM, 1))
     second_test_shock.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(2, 0))
 
-# --- Presets UI (3 slots) ---
+# --- Presets UI ---
 preset_frame = ttk.Frame(frame_controls)
 preset_frame.pack(fill=tk.X, pady=(8, 4))
 
@@ -1150,10 +1157,6 @@ for i in range(PRESET_COUNT):
                      command=lambda i=i: save_preset(i))
     sbtn.grid(row=i, column=1, sticky='w', padx=(2,0))
     preset_save_buttons.append(sbtn)
-
-
-update_preset_buttons_appearance()
-
 
 # Connect mouse events
 canvas.mpl_connect("button_press_event", on_mouse_press)
@@ -1182,55 +1185,6 @@ for child in frame_controls.winfo_children():
 root.bind_all('<Control-z>', undo_action)
 root.bind_all('<Control-y>', redo_action)
 
-render_curve()
-
-# Make an initial undo snapshot of the startup state
-load_undo_snapshot()
-
-# Toggle temporary config
-def toggle_temporary_mode():
-    global UI_CONTROL_POINTS, MIN_SHOCK_DURATION, MAX_SHOCK_DURATION, UI_VIEW_MIN_PERCENT, UI_VIEW_MAX_PERCENT, curve_cache
-
-    # If enabling, reload config from file to return to last saved state
-    if not temporary_mode_disabled.get():
-        if os.path.exists(CONFIG_FILE_PATH):
-            try:
-                with open(CONFIG_FILE_PATH, "r") as f:
-                    data = json.load(f)
-                new_pts = [(float(x), float(y)) for x, y in data.get("curve_points", [])]
-                
-                UI_CONTROL_POINTS.clear()
-                UI_CONTROL_POINTS.extend(new_pts)
-                curve_cache = None
-                
-                MIN_SHOCK_DURATION = float(data.get("min_duration", MIN_SHOCK_DURATION))
-                MAX_SHOCK_DURATION = float(data.get("max_duration", MAX_SHOCK_DURATION))
-                UI_VIEW_MIN_PERCENT = int(data.get("ui_min_x", data.get("curve_min_x", UI_VIEW_MIN_PERCENT)))
-                UI_VIEW_MAX_PERCENT = int(data.get("ui_max_x", data.get("curve_max_x", UI_VIEW_MAX_PERCENT)))
-                
-                render_curve()
-                
-                min_duration_scale.set(MIN_SHOCK_DURATION)
-                max_duration_scale.set(MAX_SHOCK_DURATION)
-                min_duration_var.set(f"Min Duration ({MIN_SHOCK_DURATION:.1f}s)")
-                max_duration_var.set(f"Max Duration ({MAX_SHOCK_DURATION:.1f}s)")
-                ui_min_scale.set(UI_VIEW_MIN_PERCENT)
-                ui_max_scale.set(UI_VIEW_MAX_PERCENT)
-                
-                logging.info("Config reloaded on temporary disable")
-            except Exception as e:
-                logging.exception(f"Failed to reload config: {e}")
-    logging.info(f"Temporary mode {'enabled' if temporary_mode_disabled.get() else 'disabled'}")
-    
-root.after(0, lambda: (fig.tight_layout(pad=1.2), canvas.draw_idle()))
-    
-# def log_thread_count():
-#     while True:
-#         time.sleep(5)
-#         logging.info(f"Active threads: {threading.active_count()} (This is a temporary measure to try and fix CPU usage and a memory leak)")
-#         for t in threading.enumerate():
-#             logging.info(f"  {t.name}: {t.is_alive()}")
-
 
 # Shutdown logic
 def shutdown():
@@ -1254,25 +1208,32 @@ def shutdown():
 osc_server_thread = threading.Thread(target=osc_server, daemon=True)
 serial_thread = threading.Thread(target=serial_worker, daemon=True)
 shocker_thread = threading.Thread(target=shocker_worker, daemon=True)
-# logging_thread_count_thread = threading.Thread(target=log_thread_count, daemon=True)
-
 
 root.protocol("WM_DELETE_WINDOW", shutdown)
 
+
+# ~~~      STARTUP      ~~~
 def start_services():
-    global client
+    global vrc_udp_client
     
-    client = vrc_client()
+    vrc_udp_client = vrc_client()
     connect_serial()
     serial_thread.start()
     osc_server_thread.start()
     shocker_thread.start()
+
+if __name__ == '__main__':
+    load_config_from_file()
+    update_preset_buttons_appearance()
+    render_curve()
+    root.after(0, lambda: (fig.tight_layout(pad=1.2), canvas.draw_idle()))
     
-    # logging_thread_count_thread.start()
+    # Make an initial undo snapshot of the startup state
+    save_undo_snapshot()
+    
+    start_services()
 
-start_services()
-
-try:
-    root.mainloop()
-except KeyboardInterrupt:
-    shutdown()
+    try:
+        root.mainloop()
+    except KeyboardInterrupt:
+        shutdown()
