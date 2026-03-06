@@ -1,8 +1,5 @@
-import re
-import sys
 from pathlib import Path
-
-CONFIG_FILE = Path("config.yml")
+import re
 
 CANONICAL = [
     ("comment", None, "# --- NETWORK / Serial Config"),
@@ -92,8 +89,3 @@ def update_config(path: Path) -> None:
 
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(f"[ConfigSync] Updated {path}")
-
-
-if __name__ == "__main__":
-    target = Path(sys.argv[1]) if len(sys.argv) > 1 else CONFIG_FILE
-    update_config(target)

@@ -4,5 +4,4 @@ pishock
 numpy
 requests
 pyyaml
-zeroconf
 python-osc

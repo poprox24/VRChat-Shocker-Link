@@ -1,5 +1,4 @@
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from zeroconf import ServiceInfo, Zeroconf
 from serial.tools import list_ports
 import matplotlib.pyplot as plt
 from pishock import SerialAPI
@@ -8,7 +7,6 @@ from vrchat_oscquery.vrchat_oscquery.threaded import vrc_osc
 from vrchat_oscquery.vrchat_oscquery.common import vrc_client, dict_to_dispatcher
 from tkinter import ttk
 import tkinter as tk
-from tkinter import simpledialog
 import numpy as np
 import threading
 import logging
