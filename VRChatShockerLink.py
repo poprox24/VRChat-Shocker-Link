@@ -525,43 +525,50 @@ def shocker_worker():
 state_lock = threading.Lock()
 def handle_osc_packet(address, *args):
     global last_trigger_time, trigger_timestamps, state_lock, shock_q
-    if not args or args[0] != 1: # Only continue if an OSC packet is received
-        return
 
     # Only accept valid shock parameter
     if (address == SHOCK_PARAM or address == SECOND_SHOCK_PARAM) and args:
         
-        now = time.time()
-        with state_lock:
-            trigger_timestamps[:] = [t for t in trigger_timestamps if now - t <= COOLDOWN_WINDOW_S]
-            trigger_count = len(trigger_timestamps)
-            dynamic_cooldown = min(BASE_COOLDOWN_S + COOLDOWN_FACTOR_S * trigger_count, MAX_COOLDOWN_S)
 
-            # Check cooldown
-            if COOLDOWN_ENABLED and now - last_trigger_time <= dynamic_cooldown:
-                send_chat_message(f"On cooldown: {round(last_trigger_time - now + dynamic_cooldown, 1)}s")
+        # If parameter equals 1, continue
+        param_value = args[0]
+        if param_value == 1:
+            now = time.time()
+            with state_lock:
+                trigger_timestamps[:] = [t for t in trigger_timestamps if now - t <= COOLDOWN_WINDOW_S]
+                trigger_count = len(trigger_timestamps)
+                dynamic_cooldown = min(BASE_COOLDOWN_S + COOLDOWN_FACTOR_S * trigger_count, MAX_COOLDOWN_S)
+
+                # Check cooldown
+                if COOLDOWN_ENABLED and now - last_trigger_time <= dynamic_cooldown:
+                    send_chat_message(f"On cooldown: {round(last_trigger_time - now + dynamic_cooldown, 1)}s")
+                    should_proceed = False
+                    return
+                else:
+                    last_trigger_time = now
+                    trigger_timestamps.append(now)
+                    should_proceed = True
+                
+            if not should_proceed:
                 return
+
+            # Determine shock intensity and duration
+            intensities, weights = compute_curve_distribution()
+
+            if address == SHOCK_PARAM:
+                # For main shock param, use full curve
+                intensity_percent = int(random.choices(intensities, weights=weights, k=1)[0])
             else:
-                last_trigger_time = now
-                trigger_timestamps.append(now)
+                # For second shock param, use only the upper half of the curve
+                sorted_indices = np.argsort(intensities)
+                upper_half_indices = sorted_indices[len(sorted_indices)//2:]
+                intensity_percent = int(random.choices(intensities[upper_half_indices], weights=weights[upper_half_indices], k=1)[0])
 
-        # Determine shock intensity and duration
-        intensities, weights = compute_curve_distribution()
+            duration_s = round(random.uniform(MIN_SHOCK_DURATION, MAX_SHOCK_DURATION), 1)
 
-        if address == SHOCK_PARAM:
-            # For main shock param, use full curve
-            intensity_percent = int(random.choices(intensities, weights=weights, k=1)[0])
-        else:
-            # For second shock param, use only the upper half of the curve
-            sorted_indices = np.argsort(intensities)
-            upper_half_indices = sorted_indices[len(sorted_indices)//2:]
-            intensity_percent = int(random.choices(intensities[upper_half_indices], weights=weights[upper_half_indices], k=1)[0])
-
-        duration_s = round(random.uniform(MIN_SHOCK_DURATION, MAX_SHOCK_DURATION), 1)
-
-        # Send shock and chat message
-        shock_q.put((intensity_percent, duration_s))
-        send_chat_message(f"⚡ {intensity_percent}% | {duration_s}s")
+            # Send shock and chat message
+            shock_q.put((intensity_percent, duration_s))
+            send_chat_message(f"⚡ {intensity_percent}% | {duration_s}s")
             
 # ~~~      Bezier Curve and Distribution Logic      ~~~
 # Bezier curve interpolation for rendering curve
