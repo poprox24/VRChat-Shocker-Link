@@ -995,7 +995,7 @@ def init_plot():
     vline_min.set_label(f"Min {int(min_x)}% with {min_y*10:.1f} weight")
     vline_max.set_label(f"Max {int(max_x)}% with {max_y*10:.1f} weight")
     
-    legend = ax.legend(loc='upper right', bbox_to_anchor=(1.02, 1.0), framealpha=0.9, fontsize=10)
+    legend = ax.legend(loc='upper right', bbox_to_anchor=(1.0, 1.0), framealpha=0.9, fontsize=10)
     legend.get_frame().set_facecolor(OUTSIDE_CURVE_BG)
     legend.get_frame().set_edgecolor('#222')
     for text in legend.get_texts():
