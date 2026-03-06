@@ -69,6 +69,7 @@ Make sure to download this program before you continue:
 5. Change the **SHOCK_PARAMETER** to the parameter you created on your VRChat avatar and set **USE_PISHOCK** to false, if using a OpenShock device
 6. Run **RunShockerLink.bat**
     - If using an OpenShock and the shocker doesn't react, change the **OPENSHOCK_SHOCKER_ID** in **config.yml** to the one you set on the website
+> Note that the first launch takes longer due to packages being installed.
 
 ### Usage
 
