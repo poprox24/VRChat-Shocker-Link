@@ -1,5 +1,6 @@
 from VRC_OSCQuery import vrc_client, dict_to_dispatcher, start_osc
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from serial.serialutil import SerialException
 from serial.tools import list_ports
 import matplotlib.pyplot as plt
 from queue import Queue, Empty
@@ -505,11 +506,14 @@ def connect_serial():
                             return ser
                         else:
                             ser.close()
+                    except SerialException as e:
+                        print(f"{RED} Couldn't open {port}. It's probably in use by another program.")
                     except Exception as e:
                         logging.exception(f"{RED}Failed on {port}: {e}")
                     logging.warning(f"{YELLOW}Connection attempt {RESET}{attempt+1}/3 {YELLOW}for port {RESET}{port} {YELLOW}failed.")
-                logging.warning(f"{YELLOW}Retrying in 3 seconds...")
-                time.sleep(3)
+                if attempt < 3:
+                    logging.warning(f"{YELLOW}Retrying in 3 seconds...")
+                    time.sleep(3)
 
             logging.error(f"{RED}Failed to open serial. Shocks disabled.")
             serial_connection = None
