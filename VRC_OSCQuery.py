@@ -11,6 +11,11 @@ RED = "\033[31m"
 YELLOW = "\033[33m"
 CYAN = "\033[36m"
 
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(message)s'
+    )
+
 # Used for sending messages to VRChat
 def vrc_client(vrchat_host) -> SimpleUDPClient:
     return SimpleUDPClient(vrchat_host, 9000)

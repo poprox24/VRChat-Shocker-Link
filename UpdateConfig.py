@@ -3,6 +3,11 @@ import logging
 import sys
 import re
 
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(message)s'
+    )
+
 RED = "\033[31m"
 YELLOW = "\033[33m"
 CYAN = "\033[36m"
