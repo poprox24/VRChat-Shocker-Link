@@ -523,8 +523,12 @@ def connect_serial():
                 try:
                     ser = serial.Serial(port.device, OPENSHOCK_SERIAL_BAUDRATE, timeout=1)
                     ser.write(b"info\n")
-                    resp = ser.read(50)
-                    print(resp)
+                    count = 0
+                    while count < 20:
+                        line = ser.readline()
+                        if line.startswith("TERMINALINFO: "):
+                            return line
+                    print(line)
                     if b"pishock" in resp:
                         ser.flush()
                         logging.info(f"{RESET}Connected to serial port {CYAN}{port}")
@@ -535,7 +539,7 @@ def connect_serial():
                 except Exception as e:
                     logging.exception(f"{RED}Failed on {port}: {e}")
             try:
-                pishock_api = SerialAPI()
+                pishock_api = SerialAPI(None)
             except SerialAutodetectError as e:
                 logging.exception(f"{RED}Couldn't connect to the PiShock Device.\nTry disconnecting other serial devices or changing port.")
                 pishock_api = None
