@@ -524,6 +524,7 @@ def connect_serial():
                     ser = serial.Serial(port.device, OPENSHOCK_SERIAL_BAUDRATE, timeout=1)
                     ser.write(b"info\n")
                     resp = ser.read(50)
+                    print(resp)
                     if b"pishock" in resp:
                         ser.flush()
                         logging.info(f"{RESET}Connected to serial port {CYAN}{port}")
