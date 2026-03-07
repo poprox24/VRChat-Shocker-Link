@@ -530,6 +530,7 @@ def connect_serial():
                     count = 0
                     while count < 20:
                         resp = ser.readline()
+                        print(str(resp))
                         # Read info response and wait for up to 20 lines to find it
                         if resp.startswith(b"TERMINALINFO: "):
                             if b"pishock" in resp:
