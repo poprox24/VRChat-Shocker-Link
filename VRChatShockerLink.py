@@ -519,6 +519,7 @@ def connect_serial():
             return None
     else:
         if not SERIAL_PORT or SERIAL_PORT == "":
+            found = False
             # Try to find the port manually first
             for port in ports:
                 try:
@@ -528,7 +529,7 @@ def connect_serial():
                     data = json.dumps({"cmd": "info"}) + "\n"
                     ser.write(data.encode("utf-8"))
                     count = 0
-                    found = False
+                    
                     while count < 40:
                         resp = ser.readline()
                         count += 1
@@ -556,12 +557,13 @@ def connect_serial():
                     logging.exception(f"{RED}Failed on {port}: {e}")
                     break
             # If we don't find a port, try finding automatically using pishock_api
-            try:
-                pishock_api = SerialAPI(None)
-                logging.info(f"{RESET}Connected to PiShock Hub")
-            except SerialAutodetectError as e:
-                logging.exception(f"{RED}Couldn't connect to the PiShock Device.\nTry disconnecting other serial devices or changing port.")
-                pishock_api = None
+            if not found:
+                try:
+                    pishock_api = SerialAPI(None)
+                    logging.info(f"{RESET}Connected to PiShock Hub")
+                except SerialAutodetectError as e:
+                    logging.exception(f"{RED}Couldn't connect to the PiShock Device.\nTry disconnecting other serial devices or changing port.")
+                    pishock_api = None
         # Port entered manually, skip all
         else:
             try:
