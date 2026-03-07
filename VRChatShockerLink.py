@@ -519,30 +519,40 @@ def connect_serial():
             return None
     else:
         if not SERIAL_PORT or SERIAL_PORT == "":
+            # Try to find the port manually first
             for port in ports:
                 try:
                     ser = serial.Serial(port.device, OPENSHOCK_SERIAL_BAUDRATE, timeout=1)
-                    ser.write(b"info\n")
+                    
+                    # Send info command to PiShock Hub
+                    data = json.dumps({"cmd": "info"}) + "\n"
+                    ser.write(data.encode("utf-8"))
                     count = 0
                     while count < 20:
-                        line = ser.readline()
-                        if line.startswith("TERMINALINFO: "):
-                            return line
-                    print(line)
-                    if b"pishock" in resp:
-                        ser.flush()
-                        logging.info(f"{RESET}Connected to serial port {CYAN}{port}")
-                        pishock_api = SerialAPI(port)
-                        return
+                        resp = ser.readline()
+                        # Read info response and wait for up to 20 lines to find it
+                        if resp.startswith(b"TERMINALINFO: "):
+                            if b"pishock" in resp:
+                                ser.close()
+                                try:
+                                    pishock_api = SerialAPI(port.device)
+                                    logging.info(f"{RESET}Connected to serial port {CYAN}{port.device}")
+                                    return
+                                except Exception as e:
+                                    logging.exception(f"{RED} Unknown error, try switching PiShock hub port.")
+                                    return
+                                
                 except SerialException as e:
                     logging.warning(f"{RED} Couldn't open {port}. It's probably in use by another program.")
                 except Exception as e:
                     logging.exception(f"{RED}Failed on {port}: {e}")
+            # If we don't find a port, try finding automatically using pishock_api
             try:
                 pishock_api = SerialAPI(None)
             except SerialAutodetectError as e:
                 logging.exception(f"{RED}Couldn't connect to the PiShock Device.\nTry disconnecting other serial devices or changing port.")
                 pishock_api = None
+        # Port entered manually, skip all
         else:
             try:
                 pishock_api = SerialAPI(SERIAL_PORT)
