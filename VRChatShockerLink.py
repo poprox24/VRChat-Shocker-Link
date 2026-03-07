@@ -528,6 +528,7 @@ def connect_serial():
                     data = json.dumps({"cmd": "info"}) + "\n"
                     ser.write(data.encode("utf-8"))
                     count = 0
+                    found = False
                     while count < 40:
                         resp = ser.readline()
                         count += 1
@@ -538,17 +539,22 @@ def connect_serial():
                                 try:
                                     pishock_api = SerialAPI(port.device)
                                     logging.info(f"{RESET}Connected to serial port {CYAN}{port.device}")
-                                    return
+                                    found = True
+                                    break
                                 except Exception as e:
-                                    logging.exception(f"{RED} Unknown error, try switching PiShock hub port.")
-                                    return
+                                    logging.exception(f"{RED} Unknown error while searching for PiShock hub.")
+                                    break
                         elif resp == b"":
                             break
+                    if found:
+                        break
                                 
                 except SerialException as e:
                     logging.warning(f"{RED} Couldn't open {port}. It's probably in use by another program.")
+                    break
                 except Exception as e:
                     logging.exception(f"{RED}Failed on {port}: {e}")
+                    break
             # If we don't find a port, try finding automatically using pishock_api
             try:
                 pishock_api = SerialAPI(None)
