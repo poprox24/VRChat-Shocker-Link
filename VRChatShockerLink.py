@@ -1,10 +1,10 @@
 from VRC_OSCQuery import vrc_client, dict_to_dispatcher, start_osc
+from pishock.zap.serialapi import SerialAutodetectError, SerialAPI
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from serial.serialutil import SerialException
 from serial.tools import list_ports
 import matplotlib.pyplot as plt
 from queue import Queue, Empty
-from pishock import SerialAPI
 from tkinter import ttk
 import tkinter as tk
 import numpy as np
@@ -68,12 +68,15 @@ def return_list(x):
 # --- NETWORK / Serial Config
 USE_PISHOCK = config.get("USE_PISHOCK", False) # Use PiShock if True, else OpenShock
 OPENSHOCK_SHOCKER_IDS = return_list(config.get("OPENSHOCK_SHOCKER_ID", [None])) # ID for OpenShock shockers
+
+PISHOCK_SHOCKER_IDS = return_list(config.get("PISHOCK_SHOCKER_ID", []))
 RANDOM_OR_SEQUENTIAL = config.get("RANDOM_OR_SEQUENTIAL", False)
 
 OPENSHOCK_SERIAL_BAUDRATE = 115200
 SERIAL_PORT = config.get("serial_port", "")
 SHOCK_PARAM = f"/avatar/parameters/{config.get('SHOCK_PARAMETER', None)}" # OSC parameter to listen for shock trigger
 SECOND_SHOCK_PARAM = f"/avatar/parameters/{config.get('SECOND_SHOCK_PARAMETER', None)}" # Seccond parameter for stronger shocks
+
 
 VRCHAT_HOST = config.get("VRCHAT_HOST", "127.0.0.1")
 
@@ -120,12 +123,6 @@ redo_history = []
 # Timestamps for trigger cooldown
 trigger_timestamps = []
 last_trigger_time = 0
-
-# Pishock Vars
-if USE_PISHOCK:
-    pishock_api = SerialAPI(port = SERIAL_PORT or None)
-    PISHOCK_SHOCKER_IDS = return_list(config.get("PISHOCK_SHOCKER_ID", []))
-    shockers = None
     
 # Presets
 presets = [None] * PRESET_COUNT
@@ -135,6 +132,8 @@ preset_buttons = []
 preset_save_buttons = []
 
 # Serial
+pishock_api = None
+shockers = None
 serial_connection = None        # Shocker Serial Connection
 shockers = []                   # Shocker List
 serial_q = Queue()              # Serial Queue
@@ -479,21 +478,21 @@ def handle_osc_packet(address, *args):
         send_chat_message(f"⚡ {intensity_percent}% | {duration_s}s")
 
 def connect_serial():
-    global serial_connection, pishock_api, shockers
+    global serial_connection, pishock_api, shockers, PISHOCK_SHOCKER_IDS
+    
+    # If no port specified, scan automatically
+    ports = []
+    if SERIAL_PORT.strip():
+        ports = [SERIAL_PORT]
+    else:
+        ports = [p for p in list_ports.comports()]
 
     if not USE_PISHOCK:
         if serial_connection is None or not getattr(serial_connection, "is_open", False):
-            # If no port specified, scan automatically
-            ports = []
-            if SERIAL_PORT.strip():
-                ports = [SERIAL_PORT]
-            else:
-                ports = [p.device for p in list_ports.comports()]
-
             logging.info(f"{RESET}Available ports: {ports}")
 
             for attempt in range(3):
-                for port in ports:
+                for port in ports.device: # USB Path
                     try:
                         ser = serial.Serial(port, OPENSHOCK_SERIAL_BAUDRATE, timeout=1)
                         ser.write(b"domain\n")
@@ -507,7 +506,7 @@ def connect_serial():
                         else:
                             ser.close()
                     except SerialException as e:
-                        print(f"{RED} Couldn't open {port}. It's probably in use by another program.")
+                        logging.warning(f"{RED} Couldn't open {port}. It's probably in use by another program.")
                     except Exception as e:
                         logging.exception(f"{RED}Failed on {port}: {e}")
                     logging.warning(f"{YELLOW}Connection attempt {RESET}{attempt+1}/3 {YELLOW}for port {RESET}{port} {YELLOW}failed.")
@@ -519,22 +518,50 @@ def connect_serial():
             serial_connection = None
             return None
     else:
-        if not PISHOCK_SHOCKER_IDS:
-             # Find pishock shocker
-            info = pishock_api.info()
-            shockers = info.get("shockers", [])
-            first_shocker_id = shockers[0]["id"] if shockers else None
-            if first_shocker_id is not None:
-                logging.info(f"{RESET}Found shocker with ID {first_shocker_id}")
-                shocker = pishock_api.shocker(first_shocker_id)
-                shockers.append(shocker)
-            else:
-                logging.warning(f"{YELLOW}No shockers found.")
+        if not SERIAL_PORT:
+            for port in ports:
+                try:
+                    ser = serial.Serial(port.device, OPENSHOCK_SERIAL_BAUDRATE, timeout=1)
+                    ser.write(b"info\n")
+                    resp = ser.read(50)
+                    if b"pishock" in resp:
+                        ser.flush()
+                        logging.info(f"{RESET}Connected to serial port {CYAN}{port}")
+                        pishock_api = SerialAPI(port)
+                        return
+                except SerialException as e:
+                    logging.warning(f"{RED} Couldn't open {port}. It's probably in use by another program.")
+                except Exception as e:
+                    logging.exception(f"{RED}Failed on {port}: {e}")
+            try:
+                pishock_api = SerialAPI(None)
+            except SerialAutodetectError as e:
+                logging.exception(f"{RED}Couldn't connect to the PiShock Device.\nTry disconnecting other serial devices or changing port.")
+                pishock_api = None
         else:
-            for shocker_id in PISHOCK_SHOCKER_IDS:
-                shocker_instance = pishock_api.shocker(shocker_id)
-                shockers.append(shocker_instance)
-                logging.info(f"{RESET}Created shocker instance for ID {shocker_id}")
+            try:
+                pishock_api = SerialAPI(SERIAL_PORT)
+            except SerialAutodetectError as e:
+                logging.exception(f"{RED}Couldn't connect to the PiShock Device.\nWrong port setup in config.")
+                pishock_api = None
+        
+        if pishock_api:
+            if not PISHOCK_SHOCKER_IDS:
+                # Find pishock shocker
+                info = pishock_api.info()
+                shockers = info.get("shockers", [])
+                first_shocker_id = shockers[0]["id"] if shockers else None
+                if first_shocker_id is not None:
+                    logging.info(f"{RESET}Found shocker with ID {first_shocker_id}")
+                    shocker = pishock_api.shocker(first_shocker_id)
+                    shockers.append(shocker)
+                else:
+                    logging.warning(f"{YELLOW}No shockers found.")
+            else:
+                for shocker_id in PISHOCK_SHOCKER_IDS:
+                    shocker_instance = pishock_api.shocker(shocker_id)
+                    shockers.append(shocker_instance)
+                    logging.info(f"{RESET}Created shocker instance for ID {shocker_id}")
 
 def serial_worker():
     global serial_connection
