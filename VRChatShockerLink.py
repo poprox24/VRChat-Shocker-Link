@@ -521,41 +521,42 @@ def connect_serial():
             logging.info(f"{RESET}Available ports: {[p.device for p in ports]}")
             found = False
             # Try to find the port manually first
-            for port in ports:
-                try:
-                    ser = serial.Serial(port.device, OPENSHOCK_SERIAL_BAUDRATE, timeout=1)
-                    
-                    # Send info command to PiShock Hub
-                    data = json.dumps({"cmd": "info"}) + "\n"
-                    ser.write(data.encode("utf-8"))
-                    count = 0
-                    
-                    while count < 40:
-                        resp = ser.readline()
-                        count += 1
-                        # Read info response and wait for up to 40 lines to find it
-                        if resp.startswith(b"TERMINALINFO: "):
-                            if b"pishock" in resp:
-                                ser.close()
-                                try:
-                                    pishock_api = SerialAPI(port.device)
-                                    logging.info(f"{RESET}Connected to serial port {CYAN}{port.device}")
-                                    found = True
-                                    break
-                                except Exception as e:
-                                    logging.exception(f"{RED} Unknown error while searching for PiShock hub.")
-                                    break
-                        elif resp == b"":
+            if len(ports) > 1:
+                for port in ports:
+                    try:
+                        ser = serial.Serial(port.device, OPENSHOCK_SERIAL_BAUDRATE, timeout=1)
+                        
+                        # Send info command to PiShock Hub
+                        data = json.dumps({"cmd": "info"}) + "\n"
+                        ser.write(data.encode("utf-8"))
+                        count = 0
+                        
+                        while count < 40:
+                            resp = ser.readline()
+                            count += 1
+                            # Read info response and wait for up to 40 lines to find it
+                            if resp.startswith(b"TERMINALINFO: "):
+                                if b"pishock" in resp:
+                                    ser.close()
+                                    try:
+                                        pishock_api = SerialAPI(port.device)
+                                        logging.info(f"{RESET}Connected to serial port {CYAN}{port.device}")
+                                        found = True
+                                        break
+                                    except Exception as e:
+                                        logging.exception(f"{RED} Unknown error while searching for PiShock hub.")
+                                        break
+                            elif resp == b"":
+                                break
+                        if found:
                             break
-                    if found:
+                                    
+                    except SerialException as e:
+                        logging.warning(f"{RED} Couldn't open {port}. It's probably in use by another program.")
                         break
-                                
-                except SerialException as e:
-                    logging.warning(f"{RED} Couldn't open {port}. It's probably in use by another program.")
-                    break
-                except Exception as e:
-                    logging.exception(f"{RED}Failed on {port}: {e}")
-                    break
+                    except Exception as e:
+                        logging.exception(f"{RED}Failed on {port}: {e}")
+                        break
             # If we don't find a port, try finding automatically using pishock_api
             if not found:
                 try:
