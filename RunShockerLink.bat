@@ -29,7 +29,6 @@ python -m pip install -r Requirements.txt -q
 
 echo [%~n0] Running Shocker Link...
 python VRChatShockerLink.py
-goto :EOF
 
 :END
 endlocal
