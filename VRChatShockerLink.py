@@ -559,7 +559,6 @@ def serial_worker():
         else:
             print("Failed to send shock after retries.")
 
-#test
 #~~~      SHOCKER LOGIC      ~~~
 def shocker_worker():
     global shock_q, serial_connection, shockers, last_shocker_index

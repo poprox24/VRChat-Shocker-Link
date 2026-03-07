@@ -57,7 +57,7 @@ if __name__ == "__main__":
             zf.extract(file, "update")
     
     update_folder = glob.glob(f"./update/{REPO_OWNER}-{REPO_NAME}-*", recursive=True)
-    if len(update_folder) < 0:
+    if len(update_folder) < 0.1:
         print(f"[Updatecheck] {RED}Can't find extracted zip?{RESET}")
         exit(1)
 
