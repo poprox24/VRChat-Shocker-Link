@@ -133,7 +133,6 @@ preset_save_buttons = []
 
 # Serial
 pishock_api = None
-shockers = None
 serial_connection = None        # Shocker Serial Connection
 shockers = []                   # Shocker List
 serial_q = Queue()              # Serial Queue
@@ -489,26 +488,26 @@ def connect_serial():
 
     if not USE_PISHOCK:
         if serial_connection is None or not getattr(serial_connection, "is_open", False):
-            logging.info(f"{RESET}Available ports: {ports}")
+            logging.info(f"{RESET}Available ports: {[p.device for p in ports]}")
 
             for attempt in range(3):
-                for port in ports.device: # USB Path
+                for port in ports: # USB Path
                     try:
-                        ser = serial.Serial(port, OPENSHOCK_SERIAL_BAUDRATE, timeout=1)
+                        ser = serial.Serial(port.device, OPENSHOCK_SERIAL_BAUDRATE, timeout=1)
                         ser.write(b"domain\n")
                         resp = ser.read(50)
                         if b"openshock" in resp:
                             ser.flush()
-                            logging.info(f"{RESET}Connected to serial port {CYAN}{port}")
+                            logging.info(f"{RESET}Connected to serial port {CYAN}{port.device}")
                             serial_connection = ser
                             shockers = list(OPENSHOCK_SHOCKER_IDS)
                             return ser
                         else:
                             ser.close()
                     except SerialException as e:
-                        logging.warning(f"{RED} Couldn't open {port}. It's probably in use by another program.")
+                        logging.warning(f"{RED} Couldn't open {port.device}. It's probably in use by another program.")
                     except Exception as e:
-                        logging.exception(f"{RED}Failed on {port}: {e}")
+                        logging.exception(f"{RED}Failed on {port.device}: {e}")
                     logging.warning(f"{YELLOW}Connection attempt {RESET}{attempt+1}/3 {YELLOW}for port {RESET}{port} {YELLOW}failed.")
                 if attempt < 3:
                     logging.warning(f"{YELLOW}Retrying in 3 seconds...")
@@ -519,6 +518,7 @@ def connect_serial():
             return None
     else:
         if not SERIAL_PORT or SERIAL_PORT == "":
+            logging.info(f"{RESET}Available ports: {[p.device for p in ports]}")
             found = False
             # Try to find the port manually first
             for port in ports:
