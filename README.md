@@ -4,6 +4,8 @@
 [![Stargazers][stars-shield]][stars-url]
 [![Issues][issues-shield]][issues-url]
 
+<h2><strong>!! Project obsolete, while this program fully works I made a more optimized C++ version here: https://github.com/poprox24/VRChat-Shocker-Link-CPP !!</strong><h2/>
+
 
 
 <!-- PROJECT LOGO -->
