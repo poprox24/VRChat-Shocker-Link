@@ -38,17 +38,17 @@ def start_osc(name: str, dispatcher: Dispatcher, params: set[str] = None) -> Zer
         return None
     
     osc_port = osc_server.server_address[1]
-    root_done = False
-    host_done = False
+    # root_done = False
+    # host_done = False
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
-            nonlocal root_done, host_done
+            # nonlocal root_done, host_done
             self.send_response(200)
             self.end_headers()
             if "HOST_INFO" in self.path:
                 self.wfile.write(json.dumps({"OSC_PORT": osc_port}).encode())
-                host_done = True
+                # host_done = True
             else:
                 self.wfile.write(json.dumps({"CONTENTS": {
                     "avatar": {
@@ -64,11 +64,11 @@ def start_osc(name: str, dispatcher: Dispatcher, params: set[str] = None) -> Zer
                         }
                     }
                 }}).encode())
-                root_done = True
-            if root_done and host_done:
+                # root_done = True
+            # if root_done and host_done:
                 # Stop the HTTP discovery thread after server is discovered by VRChat
-                logging.info(f"[VRC OSC] {CYAN}Server discovered by VRChat.\n[VRC OSC] Shutting down HTTP discovery server.")
-                threading.Thread(target=httpd.shutdown, daemon=True).start()
+                # logging.info(f"[VRC OSC] {CYAN}Server discovered by VRChat.\n[VRC OSC] Shutting down HTTP discovery server.")
+                # threading.Thread(target=httpd.shutdown, daemon=True).start()
         def log_message(self, *a): pass
 
     try:
